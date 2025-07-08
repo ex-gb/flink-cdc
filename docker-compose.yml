@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres-cdc
+    environment:
+      POSTGRES_DB: cdc_source
+      POSTGRES_USER: cdc_user
+      POSTGRES_PASSWORD: cdc_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    command: >
+      postgres 
+      -c wal_level=logical 
+      -c max_wal_senders=10 
+      -c max_replication_slots=10
+      -c shared_preload_libraries=pgoutput
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cdc_user -d cdc_source"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data: 

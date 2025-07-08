@@ -1,0 +1,149 @@
+ThisBuild / version := "1.0.0"
+ThisBuild / scalaVersion := "2.12.17"
+
+// Version definitions - Updated for latest CDC: CDC 3.4.0 + Flink 1.18.0  
+lazy val flinkVersion = "1.18.0"
+lazy val cdcVersion = "3.4.0"
+
+// Project configuration
+lazy val root = (project in file("."))
+  .settings(
+    name := "postgres-cdc-s3",
+    organization := "com.example",
+    
+    libraryDependencies ++= Seq(
+      // Flink Core (provided - these are already in Flink runtime)
+      "org.apache.flink" %% "flink-streaming-scala" % flinkVersion % "provided",
+      "org.apache.flink" % "flink-clients" % flinkVersion % "provided",
+      "org.apache.flink" % "flink-runtime" % flinkVersion % "provided",
+      
+      // CDC Dependencies - Updated for CDC 3.4.0 + Flink 1.18.0
+      "org.apache.flink" % "flink-connector-postgres-cdc" % cdcVersion,
+      "org.apache.flink" % "flink-avro" % flinkVersion % "provided",
+      "org.apache.flink" % "flink-connector-files" % flinkVersion % "provided",
+      
+      // Avro for serialization
+      "org.apache.avro" % "avro" % "1.11.3",
+      
+      // JSON Processing (for our custom parsing code) - Updated for Flink 1.18.0 compatibility
+      "com.fasterxml.jackson.core" % "jackson-databind" % "2.15.2",
+      "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.15.2",
+      
+      // Database connector
+      "org.postgresql" % "postgresql" % "42.7.1",
+      
+      // Logging
+      "ch.qos.logback" % "logback-classic" % "1.4.14"
+    ),
+    
+    // Assembly configuration
+    assembly / assemblyMergeStrategy := {
+      case PathList("META-INF", xs @ _*) => xs.map(_.toLowerCase) match {
+        case ("manifest.mf" :: Nil) | ("index.list" :: Nil) | ("dependencies" :: Nil) => MergeStrategy.discard
+        case ("license" :: _) | ("license.txt" :: _) | ("notice" :: _) | ("notice.txt" :: _) => MergeStrategy.discard
+        case ("services" :: _) => MergeStrategy.filterDistinctLines
+        case _ => MergeStrategy.discard
+      }
+      case "application.conf" => MergeStrategy.concat
+      case "reference.conf" => MergeStrategy.concat
+      case "log4j.properties" => MergeStrategy.discard
+      case "log4j2.xml" => MergeStrategy.discard
+      case "logback.xml" => MergeStrategy.first
+      case x if x.contains("FlinkUserCodeClassLoaders") => MergeStrategy.first
+      case x if x.contains("org.apache.flink.table.planner") => MergeStrategy.first
+      case x if x.contains("codegen") => MergeStrategy.first
+      case x if x.contains("janino") => MergeStrategy.first
+      case x if x.endsWith(".class") => MergeStrategy.first
+      case x if x.endsWith(".proto") => MergeStrategy.first
+      case x if x.endsWith(".dtd") => MergeStrategy.first
+      case x if x.endsWith(".xsd") => MergeStrategy.first
+      case x if x.contains("mozilla") => MergeStrategy.first
+      case x if x.contains("google") => MergeStrategy.first
+      case x if x.contains("jersey") => MergeStrategy.first
+      case x if x.contains("jaxb") => MergeStrategy.first
+      case x if x.contains("javax.ws.rs") => MergeStrategy.first
+      case x if x.contains("aopalliance") => MergeStrategy.first
+      case x if x.contains("commons-") => MergeStrategy.first
+      case x if x.contains("kryo") => MergeStrategy.first
+      case x if x.contains("akka") => MergeStrategy.first
+      case x if x.contains("scala") => MergeStrategy.first
+      case x if x.contains("jackson") => MergeStrategy.first
+      case x if x.contains("flink") => MergeStrategy.first
+      case x if x.contains("hadoop") => MergeStrategy.first
+      case x if x.contains("parquet") => MergeStrategy.first
+      case x if x.contains("avro") => MergeStrategy.first
+      case x if x.contains("aws") => MergeStrategy.first
+      case x if x.contains("debezium") => MergeStrategy.first
+      case x if x.contains("kafka") => MergeStrategy.first
+      case x if x.contains("connect") => MergeStrategy.first
+      case x if x.contains("module-info") => MergeStrategy.discard
+      case x if x.contains("MANIFEST") => MergeStrategy.discard
+      case x if x.contains("LICENSE") => MergeStrategy.discard
+      case x if x.contains("NOTICE") => MergeStrategy.discard
+      case x if x.contains("DEPENDENCIES") => MergeStrategy.discard
+      case x if x.contains("THIRD-PARTY") => MergeStrategy.discard
+      case _ => MergeStrategy.first
+    },
+    
+    // Assembly settings
+    assembly / assemblyJarName := "postgres-cdc-s3-production-assembly-1.0.0.jar",
+    assembly / assemblyExcludedJars := {
+      val cp = (assembly / fullClasspath).value
+      cp.filter { f =>
+        val name = f.data.getName.toLowerCase
+        name.contains("flink-dist") || 
+        name.contains("flink-table") ||
+        name.contains("hadoop-mapreduce-client-core") ||
+        name.contains("hadoop-mapreduce-client-common") ||
+        name.contains("hadoop-yarn-")
+      }
+    },
+    
+    // Compiler options
+    scalacOptions ++= Seq(
+      "-deprecation",
+      "-encoding", "UTF-8",
+      "-feature",
+      "-unchecked",
+      "-Xlint",
+      "-Ywarn-dead-code",
+      "-Ywarn-numeric-widen",
+      "-Ywarn-unused:imports",
+      "-Ywarn-unused:locals",
+      "-Ywarn-unused:params",
+      "-Ywarn-unused:patvars",
+      "-Ywarn-unused:privates"
+    ),
+    
+    // Java options
+    javacOptions ++= Seq(
+      "-source", "8",
+      "-target", "8",
+      "-encoding", "UTF-8"
+    ),
+    
+    // Test options
+    Test / parallelExecution := false,
+    Test / fork := true,
+    Test / testOptions += Tests.Argument("-oDF"),
+    
+    // Runtime options
+    run / javaOptions ++= Seq(
+      "-Xmx2g",
+      "-Xms1g",
+      "-XX:+UseG1GC",
+      "-XX:+PrintGCDetails",
+      "-XX:+PrintGCTimeStamps",
+      "-Dlogback.configurationFile=src/main/resources/logback.xml"
+    ),
+    
+    // Resolvers
+    resolvers ++= Seq(
+      "Apache Repository" at "https://repo.maven.apache.org/maven2/",
+      "Confluent Repository" at "https://packages.confluent.io/maven/",
+      "Hortonworks Repository" at "https://repo.hortonworks.com/content/repositories/releases/",
+      "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
+    )
+  )
+
+ 

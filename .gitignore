@@ -1,0 +1,52 @@
+# SBT/Scala
+target/
+project/target/
+.bsp/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.metals/
+.bloop/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files (may contain secrets)
+.env
+.env.local
+.env.*.local
+
+# Flink binaries and distributions (users should download)
+flink-*/
+*.tgz
+*.tar.gz
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# LocalStack data
+localstack-data/
+
+# Avro tools
+avro-tools-*.jar
+
+# Test output
+downloaded-avro/
+temp-validation-*/
+
+# Job logs
+cdc-job.log
+nohup.out
+
+# Generated environment files (created by scripts)
+.env.localstack
+.env.aws-s3 

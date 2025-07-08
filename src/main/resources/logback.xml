@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Console appender for development -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- File appender for production -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/cdc-pipeline.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/cdc-pipeline.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>10GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Async appender for better performance -->
+    <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="FILE"/>
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <includeCallerData>false</includeCallerData>
+    </appender>
+
+    <!-- Separate appender for CDC metrics -->
+    <appender name="CDC_METRICS" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/cdc-metrics.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/cdc-metrics.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>7</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Logger for CDC monitoring -->
+    <logger name="com.example.cdc.monitoring" level="INFO" additivity="false">
+        <appender-ref ref="CDC_METRICS"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <!-- Logger for CDC transformation -->
+    <logger name="com.example.cdc.transformation" level="INFO" additivity="false">
+        <appender-ref ref="ASYNC_FILE"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <!-- Logger for S3 sink -->
+    <logger name="com.example.cdc.sink" level="INFO" additivity="false">
+        <appender-ref ref="ASYNC_FILE"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <!-- Flink loggers -->
+    <logger name="org.apache.flink" level="INFO"/>
+    <logger name="org.apache.kafka" level="WARN"/>
+    <logger name="org.apache.hadoop" level="WARN"/>
+    <logger name="org.apache.zookeeper" level="WARN"/>
+    <logger name="com.amazonaws" level="WARN"/>
+
+    <!-- Debezium loggers -->
+    <logger name="io.debezium" level="INFO"/>
+    <logger name="org.apache.kafka.connect" level="WARN"/>
+
+    <!-- Root logger -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </root>
+</configuration> 
