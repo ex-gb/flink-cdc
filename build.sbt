@@ -1,4 +1,4 @@
-ThisBuild / version := "1.0.0"
+ThisBuild / version := "1.2.0"
 ThisBuild / scalaVersion := "2.12.17"
 
 // Version definitions - Updated for latest CDC: CDC 3.4.0 + Flink 1.18.0  
@@ -8,7 +8,7 @@ lazy val cdcVersion = "3.4.0"
 // Project configuration
 lazy val root = (project in file("."))
   .settings(
-    name := "postgres-cdc-s3",
+    name := "flink-cdc-s3",
     organization := "com.example",
     
     libraryDependencies ++= Seq(
@@ -86,7 +86,7 @@ lazy val root = (project in file("."))
     },
     
     // Assembly settings
-    assembly / assemblyJarName := "postgres-cdc-s3-production-assembly-1.0.0.jar",
+    assembly / assemblyJarName := "flink-cdc-s3-production-assembly-1.2.0.jar",
     assembly / assemblyExcludedJars := {
       val cp = (assembly / fullClasspath).value
       cp.filter { f =>

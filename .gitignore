@@ -49,4 +49,5 @@ nohup.out
 
 # Generated environment files (created by scripts)
 .env.localstack
-.env.aws-s3 
+.env.aws-s3
+.env.aws-dev 

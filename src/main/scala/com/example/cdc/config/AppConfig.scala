@@ -64,14 +64,14 @@ trait AppConfig {
     val pathStyleAccess: Boolean = params.getBoolean("s3.path-style-access", false)
     
     // File format and compression
-    val fileFormat: String = params.get("s3.file-format", "json") // json, avro, parquet
-    val compressionType: String = params.get("s3.compression-type", "gzip") // gzip, snappy, lz4
+    val fileFormat: String = params.get("s3.file-format", "avro") // json, avro, parquet
+    val compressionType: String = params.get("s3.compression-type", "snappy") // gzip, snappy, lz4
     val maxFileSize: String = params.get("s3.max-file-size", "128MB")
     val rolloverInterval: String = params.get("s3.rollover-interval", "5min")
     
     // Partitioning pattern
     val partitionFormat: String = params.get("s3.partition-format", 
-      "'year='yyyy'/month='MM'/day='dd'/hour='HH'/minute='mm'")
+      "'year='yyyy'/month='MM'/day='dd'/hour='HH'/minute='mm")
     val timezone: String = params.get("s3.timezone", "UTC")
     
     // Full S3 path construction
