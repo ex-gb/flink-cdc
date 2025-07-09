@@ -16,15 +16,16 @@ import org.apache.flink.api.java.utils.ParameterTool
 import java.util.concurrent.TimeUnit
 
 /**
- * Production PostgreSQL CDC to S3 Job - ACTUAL S3 WRITING
+ * Production CDC to S3 Job - ACTUAL S3 WRITING
  * 
  * Features:
+ * - PostgreSQL CDC processing (architecture ready for MySQL/Oracle)
  * - Multi-table CDC processing
  * - Comprehensive error handling
  * - Monitoring and metrics
- * - PRODUCTION S3: Actually writes to S3 buckets
+ * - PRODUCTION S3: Actually writes to S3 buckets with Avro format by default
  */
-object S3ProductionPostgresCdcJob extends AppConfig {
+object ProductionCdcJob extends AppConfig {
   
   private val objectMapper = new ObjectMapper()
   
@@ -74,11 +75,11 @@ object S3ProductionPostgresCdcJob extends AppConfig {
       val env = setupFlinkEnvironment()
       
       // Create CDC source using the config with merged parameters
-      println("🔧 Creating PostgreSQL CDC source...")
+      println("🔧 Creating database CDC source...")
       val cdcSource = config.buildCDCSource()
       val cdcStream = env.addSource(cdcSource)
-        .name("postgresql-cdc-source")
-        .uid("postgresql-cdc-source")
+        .name("database-cdc-source")
+        .uid("database-cdc-source")
       
       // Add raw CDC stream logging
       cdcStream
@@ -92,9 +93,10 @@ object S3ProductionPostgresCdcJob extends AppConfig {
       processMultiTableCDCWithS3(env, cdcStream, config)
       
       // Start the job
-      println("🚀 Starting PostgreSQL CDC to S3 pipeline (PRODUCTION S3 MODE)...")
+      println("🚀 Starting database CDC to S3 pipeline (PRODUCTION MODE)...")
       println(s"💾 Writing to S3 bucket: ${config.S3Config.bucketName}")
-      env.execute(config.FlinkConfig.jobName + "-S3")
+      println(s"📄 File format: ${config.S3Config.fileFormat.toUpperCase} with ${config.S3Config.compressionType} compression")
+      env.execute(config.FlinkConfig.jobName)
       
     } catch {
       case ex: Exception =>
@@ -144,6 +146,11 @@ object S3ProductionPostgresCdcJob extends AppConfig {
    */
   private def processMultiTableCDCWithS3(env: StreamExecutionEnvironment, cdcStream: org.apache.flink.streaming.api.datastream.DataStream[String], config: AppConfig): Unit = {
     
+    // Extract serializable configuration values
+    val bucketName = config.S3Config.bucketName
+    val basePath = config.S3Config.basePath
+    val tableArray = config.PostgresConfig.getTableArray
+    
     // Define side output tags for different tables and errors
     val errorTag = new OutputTag[String]("error-records") {}
     val schemaChangeTag = new OutputTag[String]("schema-changes") {}
@@ -165,7 +172,6 @@ object S3ProductionPostgresCdcJob extends AppConfig {
     handleSchemaChangesWithS3(schemaChangeStream, config)
     
     // Process each table individually with S3 sink
-    val tableArray = config.PostgresConfig.getTableArray
     println(s"📋 Processing tables: ${tableArray.mkString(", ")}")
     
     tableArray.foreach { tableWithSchema =>
@@ -174,25 +180,7 @@ object S3ProductionPostgresCdcJob extends AppConfig {
       
       // Filter events for this specific table
       val tableStream = processedStream
-        .filter(event => {
-          try {
-            val jsonNode = objectMapper.readTree(event)
-            val source = jsonNode.get("source")
-            if (source != null && source.has("table")) {
-              val eventTable = source.get("table").asText()
-              val eventSchema = source.get("schema").asText()
-              val matches = s"$eventSchema.$eventTable" == tableWithSchema
-              if (matches) {
-                println(s"✅ Event matched table $tableName: ${event.take(100)}...")
-              }
-              matches
-            } else {
-              false
-            }
-          } catch {
-            case _: Exception => false
-          }
-        })
+        .filter(new TableFilter(tableWithSchema, tableName))
         .name(s"$tableName-filter")
         .uid(s"$tableName-filter")
       
@@ -204,21 +192,15 @@ object S3ProductionPostgresCdcJob extends AppConfig {
       
       // Write to S3 using the enhanced CDC sink
       monitoredStream
-        .map(event => {
-          println(s"📤 [$tableName] WRITING to S3: s3://${config.S3Config.bucketName}/${config.S3Config.basePath}/$tableName/")
-          println(s"📊 [$tableName] Event size: ${event.length} bytes")
-          event
-        })
+        .map(new S3LoggingMapper(tableName, bucketName, basePath))
+        .name(s"$tableName-s3-logger")
       
       // Use S3Sink's enhanced CDC sink method
-      S3Sink.createEnhancedCDCSink(monitoredStream, tableName)
+      S3Sink.createEnhancedCDCSink(monitoredStream, tableName, config)
       
       // Also print for monitoring (can be removed in pure production)
       monitoredStream
-        .map(event => {
-          val shortEvent = if (event.length > 200) event.take(200) + "..." else event
-          s"[$tableName] S3_WRITTEN: $shortEvent"
-        })
+        .map(new S3MonitoringMapper(tableName))
         .name(s"$tableName-monitor-print")
         .print(s"S3-$tableName")
       
@@ -227,11 +209,7 @@ object S3ProductionPostgresCdcJob extends AppConfig {
     
     // Monitor all processed events
     processedStream
-      .map(event => {
-        val shortEvent = if (event.length > 100) event.take(100) + "..." else event
-        println(s"🔍 ALL PROCESSED: $shortEvent")
-        s"PROCESSED: $shortEvent"
-      })
+      .map(new AllEventsMonitor())
       .name("debug-all-events")
       .print("ALL-S3-EVENTS")
   }
@@ -245,7 +223,7 @@ object S3ProductionPostgresCdcJob extends AppConfig {
       .name("error-processor")
     
     // Use S3Sink's CDC sink method for errors
-    S3Sink.createEnhancedCDCSink(errorProcessedStream, "errors")
+    S3Sink.createEnhancedCDCSink(errorProcessedStream, "errors", config)
     
     // Also print errors for monitoring
     errorProcessedStream.print("S3-ERROR")
@@ -260,7 +238,7 @@ object S3ProductionPostgresCdcJob extends AppConfig {
       .name("schema-change-processor")
     
     // Use S3Sink's CDC sink method for schema changes
-    S3Sink.createEnhancedCDCSink(schemaProcessedStream, "schema-changes")
+    S3Sink.createEnhancedCDCSink(schemaProcessedStream, "schema-changes", config)
     
     // Also print schema changes for monitoring
     schemaProcessedStream.print("S3-SCHEMA_CHANGE")
@@ -283,17 +261,18 @@ object S3ProductionPostgresCdcJob extends AppConfig {
   private def printBanner(): Unit = {
     println(
       """
-        |  ____           _                    ____  _____ _          ____ ____   ____   _____ _____ 
-        | |  _ \ ___  ___| |_ __ _ _ __ ___   / ___||  ___| |        / ___|  _ \ / ___| |___ /|___ / 
-        | | |_) / _ \/ __| __/ _` | '__/ _ \  \___ \| |_  | |  _____ \___ \| |_) | |       |_ \  |_ \ 
-        | |  __/ (_) \__ \ || (_| | | |  __/   ___) |  _| | |_|_____|___) |  __/| |___   ___) |___) |
-        | |_|   \___/|___/\__\__, |_|  \___|  |____/|_|   |_(_)     |____/|_|    \____| |____/|____/ 
-        |                    |___/                                                                    
+        |  ____        _        _                     ____ ____   ____   _____ _____ 
+        | |  _ \  __ _| |_ __ _| |__   __ _ ___  ___  / ___|  _ \ / ___| |___ /|___ / 
+        | | | | |/ _` | __/ _` | '_ \ / _` / __|/ _ \ \___ \| |_) | |       |_ \  |_ \ 
+        | | |_| | (_| | || (_| | |_) | (_| \__ \  __/  ___) |  __/| |___   ___) |___) |
+        | |____/ \__,_|\__\__,_|_.__/ \__,_|___/\___| |____/|_|    \____| |____/|____/ 
+        |                                                                              
         |
-        | PostgreSQL CDC to S3 Production Pipeline - PRODUCTION S3 MODE
-        | Version: 1.0.0
-        | 💾 Production Mode: Writing to actual S3 buckets in Avro format
-        | 📄 Format: Avro with comprehensive CDC schema
+        | Database CDC to S3 Production Pipeline - PRODUCTION MODE
+        | Version: 1.2.0
+        | 🎯 Current Database: PostgreSQL (MySQL/Oracle architecture ready)
+        | 💾 Production Mode: Writing to S3 buckets in Avro format (default)
+        | 📄 Default Format: Avro with comprehensive CDC schema & Snappy compression
         | ⚠️  Warning: This will create files in S3!
         |""".stripMargin)
   }
@@ -328,5 +307,64 @@ class S3SchemaChangeHandler extends org.apache.flink.api.common.functions.MapFun
     println(s"💾 Writing schema change to S3...")
     
     enhancedRecord
+  }
+}
+
+/**
+ * Serializable table filter for CDC events
+ */
+class TableFilter(tableWithSchema: String, tableName: String) extends org.apache.flink.api.common.functions.FilterFunction[String] {
+  @transient private lazy val objectMapper = new com.fasterxml.jackson.databind.ObjectMapper()
+  
+  override def filter(event: String): Boolean = {
+    try {
+      val jsonNode = objectMapper.readTree(event)
+      val source = jsonNode.get("source")
+      if (source != null && source.has("table")) {
+        val eventTable = source.get("table").asText()
+        val eventSchema = source.get("schema").asText()
+        val matches = s"$eventSchema.$eventTable" == tableWithSchema
+        if (matches) {
+          println(s"✅ Event matched table $tableName: ${event.take(100)}...")
+        }
+        matches
+      } else {
+        false
+      }
+    } catch {
+      case _: Exception => false
+    }
+  }
+}
+
+/**
+ * Serializable S3 logging mapper
+ */
+class S3LoggingMapper(tableName: String, bucketName: String, basePath: String) extends org.apache.flink.api.common.functions.MapFunction[String, String] {
+  override def map(event: String): String = {
+    println(s"📤 [$tableName] WRITING to S3: s3://$bucketName/$basePath/$tableName/")
+    println(s"📊 [$tableName] Event size: ${event.length} bytes")
+    event
+  }
+}
+
+/**
+ * Serializable S3 monitoring mapper
+ */
+class S3MonitoringMapper(tableName: String) extends org.apache.flink.api.common.functions.MapFunction[String, String] {
+  override def map(event: String): String = {
+    val shortEvent = if (event.length > 200) event.take(200) + "..." else event
+    s"[$tableName] S3_WRITTEN: $shortEvent"
+  }
+}
+
+/**
+ * Serializable all events monitor
+ */
+class AllEventsMonitor extends org.apache.flink.api.common.functions.MapFunction[String, String] {
+  override def map(event: String): String = {
+    val shortEvent = if (event.length > 100) event.take(100) + "..." else event
+    println(s"🔍 ALL PROCESSED: $shortEvent")
+    s"PROCESSED: $shortEvent"
   }
 } 

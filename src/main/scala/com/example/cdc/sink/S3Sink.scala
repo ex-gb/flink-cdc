@@ -33,41 +33,41 @@ import org.apache.avro.io.{BinaryEncoder, EncoderFactory}
  * - Multi-table support
  * - Error handling and monitoring
  */
-object S3Sink extends AppConfig {
+object S3Sink {
   
   private val objectMapper = new ObjectMapper()
   
   /**
    * Creates a production-ready S3 sink for CDC events
    */
-  def createCDCSink(dataStream: DataStream[String], tableName: String): Unit = {
+  def createCDCSink(dataStream: DataStream[String], tableName: String, config: AppConfig): Unit = {
     
     // Extract table-specific configuration
-    val tableSpecificPath = s"${S3Config.getFullPath}/$tableName"
+    val tableSpecificPath = s"${config.S3Config.getFullPath}/$tableName"
     
     // Create bucket assigner for date/time partitioning
     val bucketAssigner: BucketAssigner[String, String] = 
       new DateTimeBucketAssigner[String](
-        S3Config.partitionFormat,
-        ZoneId.of(S3Config.timezone)
+        config.S3Config.partitionFormat,
+        ZoneId.of(config.S3Config.timezone)
       )
     
     // Create rolling policy based on configuration
-    val rollingPolicy = S3Config.fileFormat match {
-      case "json" => createJsonRollingPolicy()
-      case "avro" => createAvroRollingPolicy()
-      case _ => createDefaultRollingPolicy()
+    val rollingPolicy = config.S3Config.fileFormat match {
+      case "json" => createJsonRollingPolicy(config)
+      case "avro" => createAvroRollingPolicy(config)
+      case _ => createDefaultRollingPolicy(config)
     }
     
     // Create output file configuration
     val outputFileConfig = OutputFileConfig.builder()
-      .withPartPrefix(generateFilePrefix(tableName))
-      .withPartSuffix(getFileSuffix())
+      .withPartPrefix(generateFilePrefix(tableName, config))
+      .withPartSuffix(getFileSuffix(config))
       .build()
     
     // Build the FileSink
     val fileSink = FileSink
-      .forRowFormat(new Path(tableSpecificPath), createEncoder())
+      .forRowFormat(new Path(tableSpecificPath), createEncoder(config))
       .withBucketAssigner(bucketAssigner)
       .withRollingPolicy(rollingPolicy.asInstanceOf[RollingPolicy[String, String]])
       .withOutputFileConfig(outputFileConfig)
@@ -83,7 +83,7 @@ object S3Sink extends AppConfig {
   /**
    * Enhanced CDC sink with data enrichment and monitoring
    */
-  def createEnhancedCDCSink(dataStream: DataStream[String], tableName: String): Unit = {
+  def createEnhancedCDCSink(dataStream: DataStream[String], tableName: String, config: AppConfig): Unit = {
     
     // Add monitoring and data enrichment
     val enrichedStream = dataStream
@@ -92,33 +92,33 @@ object S3Sink extends AppConfig {
       .uid(s"$tableName-enricher")
     
     // Create multi-format sink based on configuration
-    S3Config.fileFormat match {
-      case "json" => createJsonSink(enrichedStream, tableName)
-      case "avro" => createAvroSink(enrichedStream, tableName)
-      case "parquet" => createParquetSink(enrichedStream, tableName)
-      case _ => createJsonSink(enrichedStream, tableName) // Default to JSON
+    config.S3Config.fileFormat match {
+      case "json" => createJsonSink(enrichedStream, tableName, config)
+      case "avro" => createAvroSink(enrichedStream, tableName, config)
+      case "parquet" => createParquetSink(enrichedStream, tableName, config)
+      case _ => createJsonSink(enrichedStream, tableName, config) // Default to JSON
     }
   }
   
   /**
    * Creates JSON format sink with compression
    */
-  private def createJsonSink(dataStream: DataStream[String], tableName: String): Unit = {
-    val tableSpecificPath = s"${S3Config.getFullPath}/$tableName"
+  private def createJsonSink(dataStream: DataStream[String], tableName: String, config: AppConfig): Unit = {
+    val tableSpecificPath = s"${config.S3Config.getFullPath}/$tableName"
     
     val bucketAssigner = new DateTimeBucketAssigner[String](
-      S3Config.partitionFormat,
-      ZoneId.of(S3Config.timezone)
+      config.S3Config.partitionFormat,
+      ZoneId.of(config.S3Config.timezone)
     )
     
     val rollingPolicy = DefaultRollingPolicy.builder()
-      .withRolloverInterval(parseTimeToMillis(S3Config.rolloverInterval))
-      .withInactivityInterval(parseTimeToMillis(S3Config.rolloverInterval))
-      .withMaxPartSize(parseMemorySize(S3Config.maxFileSize))
+      .withRolloverInterval(parseTimeToMillis(config.S3Config.rolloverInterval))
+      .withInactivityInterval(parseTimeToMillis(config.S3Config.rolloverInterval))
+      .withMaxPartSize(parseMemorySize(config.S3Config.maxFileSize))
       .build()
     
     val outputFileConfig = OutputFileConfig.builder()
-      .withPartPrefix(generateFilePrefix(tableName))
+      .withPartPrefix(generateFilePrefix(tableName, config))
       .withPartSuffix(".jsonl")
       .build()
     
@@ -138,18 +138,18 @@ object S3Sink extends AppConfig {
   /**
    * Creates Avro format sink with proper Avro serialization
    */
-  private def createAvroSink(dataStream: DataStream[String], tableName: String): Unit = {
-    val tableSpecificPath = s"${S3Config.getFullPath}/$tableName"
+  private def createAvroSink(dataStream: DataStream[String], tableName: String, config: AppConfig): Unit = {
+    val tableSpecificPath = s"${config.S3Config.getFullPath}/$tableName"
     
     val bucketAssigner = new DateTimeBucketAssigner[String](
-      S3Config.partitionFormat,
-      ZoneId.of(S3Config.timezone)
+      config.S3Config.partitionFormat,
+      ZoneId.of(config.S3Config.timezone)
     )
     
     val rollingPolicy = OnCheckpointRollingPolicy.build()
     
     val outputFileConfig = OutputFileConfig.builder()
-      .withPartPrefix(generateFilePrefix(tableName))
+      .withPartPrefix(generateFilePrefix(tableName, config))
       .withPartSuffix(".avro")
       .build()
     
@@ -172,18 +172,18 @@ object S3Sink extends AppConfig {
   /**
    * Creates Parquet format sink (placeholder for future implementation)
    */
-  private def createParquetSink(dataStream: DataStream[String], tableName: String): Unit = {
+  private def createParquetSink(dataStream: DataStream[String], tableName: String, config: AppConfig): Unit = {
     // For now, fallback to JSON
     // TODO: Implement proper Parquet sink
-    createJsonSink(dataStream, tableName)
+    createJsonSink(dataStream, tableName, config)
   }
   
   /**
    * Generates a unique file prefix with timestamp and host information
    */
-  private def generateFilePrefix(tableName: String): String = {
+  private def generateFilePrefix(tableName: String, config: AppConfig): String = {
     val timestamp = System.currentTimeMillis()
-    val dateTime = ZonedDateTime.now(ZoneId.of(S3Config.timezone))
+    val dateTime = ZonedDateTime.now(ZoneId.of(config.S3Config.timezone))
     val hostName = java.net.InetAddress.getLocalHost.getHostName.replace('.', '_')
     val formattedTime = DateTimeFormatter.ofPattern("yyyy-MM-dd-HH-mm-ss").format(dateTime)
     
@@ -193,15 +193,15 @@ object S3Sink extends AppConfig {
   /**
    * Returns appropriate file suffix based on format and compression
    */
-  private def getFileSuffix(): String = {
-    val formatSuffix = S3Config.fileFormat match {
+  private def getFileSuffix(config: AppConfig): String = {
+    val formatSuffix = config.S3Config.fileFormat match {
       case "json" => ".jsonl"
       case "avro" => ".avro"
       case "parquet" => ".parquet"
       case _ => ".jsonl"
     }
     
-    val compressionSuffix = S3Config.compressionType match {
+    val compressionSuffix = config.S3Config.compressionType match {
       case "gzip" => ".gz"
       case "snappy" => ".snappy"
       case "lz4" => ".lz4"
@@ -214,34 +214,34 @@ object S3Sink extends AppConfig {
   /**
    * Creates appropriate encoder based on compression type
    */
-  private def createEncoder(): SimpleStringEncoder[String] = {
+  private def createEncoder(config: AppConfig): SimpleStringEncoder[String] = {
     // For now, use simple string encoder
-    // TODO: Add compression support based on S3Config.compressionType
+    // TODO: Add compression support based on config.S3Config.compressionType
     new SimpleStringEncoder[String]("UTF-8")
   }
   
   /**
    * Creates JSON-specific rolling policy
    */
-  private def createJsonRollingPolicy() = {
+  private def createJsonRollingPolicy(config: AppConfig) = {
     DefaultRollingPolicy.builder()
-      .withRolloverInterval(parseTimeToMillis(S3Config.rolloverInterval))
-      .withInactivityInterval(parseTimeToMillis(S3Config.rolloverInterval))
-      .withMaxPartSize(parseMemorySize(S3Config.maxFileSize))
+      .withRolloverInterval(parseTimeToMillis(config.S3Config.rolloverInterval))
+      .withInactivityInterval(parseTimeToMillis(config.S3Config.rolloverInterval))
+      .withMaxPartSize(parseMemorySize(config.S3Config.maxFileSize))
       .build()
   }
   
   /**
    * Creates Avro-specific rolling policy
    */
-  private def createAvroRollingPolicy() = {
+  private def createAvroRollingPolicy(config: AppConfig) = {
     OnCheckpointRollingPolicy.build()
   }
   
   /**
    * Creates default rolling policy
    */
-  private def createDefaultRollingPolicy() = {
+  private def createDefaultRollingPolicy(config: AppConfig) = {
     DefaultRollingPolicy.builder()
       .withRolloverInterval(TimeUnit.MINUTES.toMillis(5))
       .withInactivityInterval(TimeUnit.MINUTES.toMillis(5))

@@ -1,12 +1,12 @@
 # PostgreSQL CDC to S3 Production Pipeline
 
-A production-ready Apache Flink application for streaming PostgreSQL database changes to S3 using Change Data Capture (CDC). Successfully tested and running on **Flink 1.18.0** with **CDC 3.4.0** - fully resolves the IllegalAccessError issue that occurred with earlier versions.
+A production-ready Apache Flink application for streaming PostgreSQL database changes to S3 using Change Data Capture (CDC). **Currently focused on PostgreSQL** with **architecture prepared for future MySQL/Oracle expansion**. Successfully tested and running on **Flink 1.18.0** with **CDC 3.4.0** - fully resolves the IllegalAccessError issue that occurred with earlier versions.
 
 ## 🚀 Features
 
 ### Core Functionality
-- **Real-time CDC**: Capture PostgreSQL changes using Debezium with zero data loss
-- **Multi-table Support**: Process multiple tables from single or multiple databases simultaneously
+- **PostgreSQL CDC**: Capture PostgreSQL changes using Debezium with zero data loss (architecture ready for MySQL/Oracle)
+- **Multi-table Support**: Process multiple tables from single or multiple PostgreSQL databases simultaneously
 - **S3 Integration**: Store data in S3 with configurable formats (JSON, Avro, Parquet)
 - **File Management**: Automatic file rolling and finalization with proper partitioning
 - **Schema Evolution**: Automatic detection and handling of schema changes
@@ -21,8 +21,10 @@ A production-ready Apache Flink application for streaming PostgreSQL database ch
 - **Logging**: Structured logging with configurable log levels and rotation
 
 ### Data Formats & Compression
-- **Multiple Formats**: JSON, Avro, Parquet support
-- **Compression**: gzip, snappy, lz4 compression options
+- **Default Format**: **Avro** (with automatic schema evolution support)
+- **Multiple Formats**: JSON, Avro, Parquet support (configurable)
+- **Default Compression**: **Snappy** (optimal for Avro format)
+- **Compression Options**: gzip, snappy, lz4 compression options
 - **Partitioning**: Date/time-based partitioning for efficient querying
 - **File Naming**: Consistent file naming with timestamps and processing metadata
 
@@ -32,13 +34,13 @@ A production-ready Apache Flink application for streaming PostgreSQL database ch
 ```
 flink-cdc-s3/
 ├── src/main/scala/com/example/cdc/
-│   ├── config/AppConfig.scala              # Configuration management
-│   ├── sink/S3Sink.scala                   # Production S3 sink with LOCAL TEST MODE
+│   ├── config/AppConfig.scala              # Configuration management (Avro defaults)
+│   ├── sink/S3Sink.scala                   # Production S3 sink with Avro support
 │   ├── monitoring/CDCMonitor.scala         # Monitoring and metrics
 │   ├── transformation/CDCEventProcessor.scala  # Event processing and routing
 │   ├── model/CdcEvent.scala                # CDC event data model
 │   ├── parser/DebeziumEventParser.scala    # Debezium event parsing
-│   └── ProductionPostgresCdcJob.scala      # Main production job
+│   └── ProductionCdcJob.scala              # Main production job (writes Avro to S3)
 ├── src/main/resources/
 │   ├── application.properties              # Default configuration
 │   └── logback.xml                         # Logging configuration
@@ -61,6 +63,7 @@ PostgreSQL → CDC Source → Raw Event Logger → Event Processor → Table Rou
 - **CDC Source**: PostgreSQL CDC connector with configurable slot management
 - **Event Processor**: Multi-table event routing and transformation
 - **S3 Sink**: Production-ready S3 sink with LOCAL TEST MODE for development
+- **S3 Plugin**: Flink S3 filesystem plugin (`flink-s3-fs-hadoop-1.18.0.jar`) for S3 connectivity
 - **Monitoring**: Real-time latency tracking and throughput metrics
 - **Error Handling**: Comprehensive error capture and logging
 
@@ -82,12 +85,18 @@ export POSTGRES_DATABASE=cdc_source
 export POSTGRES_USER=cdc_user
 export POSTGRES_PASSWORD=cdc_password
 
-# S3 Configuration (for production)
+# S3 Configuration (for ProductionCdcJob)
 export S3_BUCKET_NAME=flink-cdc-output
 export S3_BASE_PATH=cdc-events
 export AWS_REGION=us-east-1
 export AWS_ACCESS_KEY_ID=your-access-key
 export AWS_SECRET_ACCESS_KEY=your-secret-key
+
+# S3 Format Configuration (optional - defaults to Avro)
+export S3_FILE_FORMAT=avro              # avro (default), json, parquet
+export S3_COMPRESSION_TYPE=snappy       # snappy (default), gzip, lz4
+export S3_MAX_FILE_SIZE=128MB           # Maximum file size before rollover
+export S3_ROLLOVER_INTERVAL=5min        # Time-based rollover interval
 
 # Flink Configuration
 export FLINK_PARALLELISM=2
@@ -95,13 +104,26 @@ export FLINK_CHECKPOINT_INTERVAL_MS=30000
 ```
 
 ### Application Configuration
-The `ProductionPostgresCdcJob` includes **LOCAL TEST MODE** that can be enabled via command line:
-```bash
-# Local development (prints to console)
-flink run -c com.example.cdc.ProductionPostgresCdcJob app.jar --host localhost --port 5432 --database cdc_source --username cdc_user --password cdc_password --slot-name test_slot
+The **ProductionCdcJob** is the main production job for PostgreSQL CDC that writes to S3 with **Avro format by default**:
 
-# Production mode (writes to S3)
-flink run -c com.example.cdc.ProductionPostgresCdcJob app.jar --host prod-host --port 5432 --database prod_db --username prod_user --password prod_pass --slot-name prod_slot --s3-bucket prod-bucket
+```bash
+# Production deployment with Avro format (default)
+flink run -c com.example.cdc.ProductionCdcJob app.jar \
+  --hostname prod-host --port 5432 --database prod_db \
+  --username prod_user --password prod_pass --slot-name prod_slot \
+  --s3-bucket prod-bucket --s3-region us-east-1 \
+  --s3-access-key $AWS_ACCESS_KEY_ID --s3-secret-key $AWS_SECRET_ACCESS_KEY
+
+# Override format to JSON if needed
+flink run -c com.example.cdc.ProductionCdcJob app.jar \
+  --hostname prod-host --port 5432 --database prod_db \
+  --username prod_user --password prod_pass --slot-name prod_slot \
+  --s3-bucket prod-bucket --s3-file-format json --s3-compression-type gzip
+
+# Local development (without S3 parameters, for testing)
+flink run -c com.example.cdc.ProductionCdcJob app.jar \
+  --hostname localhost --port 5432 --database cdc_source \
+  --username cdc_user --password cdc_password --slot-name test_slot
 ```
 
 ## 🚀 Quick Start
@@ -121,6 +143,28 @@ psql --version
 wget https://archive.apache.org/dist/flink/flink-1.18.0/flink-1.18.0-bin-scala_2.12.tgz
 tar -xzf flink-1.18.0-bin-scala_2.12.tgz
 ```
+
+### 1.1. Enable S3 Filesystem Plugin (Required for S3 Integration)
+```bash
+# Navigate to Flink directory
+cd flink-1.18.0
+
+# Enable the S3 filesystem plugin by moving it to the plugins directory
+# This enables Flink to write directly to S3 buckets
+mkdir -p plugins/flink-s3-fs-hadoop
+cp opt/flink-s3-fs-hadoop-1.18.0.jar plugins/flink-s3-fs-hadoop/
+
+# Verify the plugin is enabled
+ls -la plugins/flink-s3-fs-hadoop/
+```
+
+**Why is this needed?**
+- The `flink-s3-fs-hadoop-1.18.0.jar` provides S3 filesystem connectivity for Flink
+- Without this plugin, Flink cannot write to S3 buckets (you'll get filesystem errors)
+- The plugin handles S3 authentication, multipart uploads, and AWS S3 API interactions
+- It's required for both production S3 writing and S3-based checkpointing
+
+**Note**: The plugin is included in the Flink distribution but needs to be manually enabled by moving it to the plugins directory.
 
 ### 2. Setup Test Environment
 ```bash
@@ -143,18 +187,18 @@ docker exec postgres-cdc psql -U postgres -d cdc_source -c "SELECT * FROM pg_rep
 # Clean build with latest dependencies
 sbt clean assembly
 
-# This creates: target/scala-2.12/postgres-cdc-s3-production-assembly-1.0.0.jar
+# This creates: target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar
 ```
 
-### 4. Development Mode (Local Testing)
+### 4. Local Development and Testing
 ```bash
 # Start Flink 1.18.0 cluster
 ./flink-1.18.0/bin/start-cluster.sh
 
-# Submit job in LOCAL TEST MODE (prints to console)
-flink-1.18.0/bin/flink run -c com.example.cdc.ProductionPostgresCdcJob \
-  target/scala-2.12/postgres-cdc-s3-production-assembly-1.0.0.jar \
-  --host localhost --port 5432 --database cdc_source \
+# Submit job for local testing (without S3 parameters)
+flink-1.18.0/bin/flink run -c com.example.cdc.ProductionCdcJob \
+  target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar \
+  --hostname localhost --port 5432 --database cdc_source \
   --username cdc_user --password cdc_password \
   --slot-name flink_cdc_slot_test
 
@@ -163,12 +207,25 @@ docker exec postgres-cdc psql -U cdc_user -d cdc_source -c \
   "INSERT INTO public.users (name, email) VALUES ('Test User', 'test@example.com');"
 ```
 
-### 5. Production Deployment
+### 5. Production Deployment (S3 with Avro Format)
 ```bash
-# Submit job for production (writes to S3)
-flink-1.18.0/bin/flink run -c com.example.cdc.ProductionPostgresCdcJob \
-  target/scala-2.12/postgres-cdc-s3-production-assembly-1.0.0.jar \
-  --host prod-host --port 5432 --database prod_db \
+# Submit production job (writes Avro files to S3 by default)
+flink-1.18.0/bin/flink run -c com.example.cdc.ProductionCdcJob \
+  target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar \
+  --hostname prod-host --port 5432 --database prod_db \
+  --username prod_user --password prod_pass \
+  --slot-name flink_cdc_slot_production \
+  --s3-bucket your-production-bucket \
+  --s3-region us-east-1 \
+  --s3-access-key $AWS_ACCESS_KEY_ID \
+  --s3-secret-key $AWS_SECRET_ACCESS_KEY
+
+# Alternative: Use environment variables for credentials
+export AWS_ACCESS_KEY_ID=your-access-key
+export AWS_SECRET_ACCESS_KEY=your-secret-key
+flink-1.18.0/bin/flink run -c com.example.cdc.ProductionCdcJob \
+  target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar \
+  --hostname prod-host --port 5432 --database prod_db \
   --username prod_user --password prod_pass \
   --slot-name flink_cdc_slot_production \
   --s3-bucket your-production-bucket
@@ -197,7 +254,18 @@ open http://localhost:8081
 - **CDC_METRIC**: Latency tracking (table, operation, latency in ms)
 - **📊 S3 Write Status**: Confirms S3 writes (production mode)
 
-### Sample Output
+### Sample Output (ProductionCdcJob)
+```bash
+📥 RAW CDC Event received: {"before":null,"after":{"id":1,"name":"John"},...}
+✅ Event matched table users: {"before":null,"after":{"id":1,"name":"John"},...}
+CDC_METRIC table=users operation=c latency=275ms
+📤 [users] WRITING to S3: s3://flink-cdc-output/cdc-events/users/
+📊 [users] Event size: 1225 bytes
+📄 File format: AVRO with snappy compression
+[users] S3_WRITTEN: {"before":null,"after":{"id":1,"name":"John"},...}
+```
+
+### Sample Output (ProductionCdcJob - Local Test Mode)
 ```bash
 📥 RAW CDC Event received: {"before":null,"after":{"id":1,"name":"John"},...}
 ✅ Event matched table users: {"before":null,"after":{"id":1,"name":"John"},...}
@@ -212,13 +280,29 @@ CDC_METRIC table=users operation=c latency=275ms
 ```
 s3://bucket/base-path/
 ├── users/
-│   ├── year=2025/month=01/day=08/hour=10/
-│   │   ├── users-2025-01-08-10-30-001.jsonl.gz
-│   │   └── users-2025-01-08-10-35-002.jsonl.gz
-└── orders/
-    └── year=2025/month=01/day=08/hour=10/
-        └── orders-2025-01-08-10-30-001.jsonl.gz
+│   ├── year=2025/month=07/day=09/hour=10/minute=15/
+│   │   ├── users-2025-07-09-10-15-01-...-0.avro
+│   │   └── users-2025-07-09-10-15-01-...-1.avro
+│   └── year=2025/month=07/day=09/hour=10/minute=16/
+│       ├── users-2025-07-09-10-15-01-...-0.avro
+│       └── users-2025-07-09-10-15-01-...-1.avro
+├── orders/
+│   └── year=2025/month=07/day=09/hour=10/minute=15/
+│       └── orders-2025-07-09-10-15-01-...-0.avro
+├── errors/
+│   └── year=2025/month=07/day=09/hour=10/minute=15/
+│       └── errors-2025-07-09-10-15-01-...-0.avro
+└── schema-changes/
+    └── year=2025/month=07/day=09/hour=10/minute=15/
+        └── schema-changes-2025-07-09-10-15-01-...-0.avro
 ```
+
+**File Format Details:**
+- **Extension**: `.avro` (Apache Avro format)
+- **Compression**: Snappy compression (default)
+- **Schema**: Comprehensive CDC schema with before/after/source metadata
+- **Partitioning**: Time-based partitioning down to minute level
+- **Separate Streams**: Users, orders, errors, and schema changes in separate directories
 
 ### CDC Event Format
 ```json
@@ -269,10 +353,12 @@ tail -f flink-1.18.0/log/flink-*-taskexecutor-*.out
 
 ### Configuration Management
 The application uses the `AppConfig` class for flexible configuration:
-- Default settings in `application.properties`
-- Environment variable overrides
-- Command-line parameter support
-- LOCAL TEST MODE detection
+- **Default settings**: Avro format with Snappy compression
+- **Environment variable overrides**: Support for all configuration parameters
+- **Command-line parameter support**: Override any configuration via CLI
+- **Format selection**: `--s3-file-format avro|json|parquet`
+- **Compression options**: `--s3-compression-type snappy|gzip|lz4`
+- **Single production-ready job**: ProductionCdcJob for PostgreSQL with S3 output (Avro format by default)
 
 ## 🚨 Troubleshooting
 
@@ -319,15 +405,43 @@ curl -s http://localhost:8081/taskmanagers | jq '.taskmanagers | length'
 # Cancel running job
 flink-1.18.0/bin/flink cancel <job-id>
 
-# Submit with explicit main class
-flink-1.18.0/bin/flink run -c com.example.cdc.ProductionPostgresCdcJob \
-  target/scala-2.12/postgres-cdc-s3-production-assembly-1.0.0.jar \
-  --host localhost --port 5432 --database cdc_source \
+# Submit with explicit main class (Local Test Mode)
+flink-1.18.0/bin/flink run -c com.example.cdc.ProductionCdcJob \
+  target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar \
+  --hostname localhost --port 5432 --database cdc_source \
   --username cdc_user --password cdc_password \
   --slot-name flink_cdc_slot_test
+
+# Submit S3 production job (writes Avro to S3)
+flink-1.18.0/bin/flink run -c com.example.cdc.ProductionCdcJob \
+  target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar \
+  --hostname localhost --port 5432 --database cdc_source \
+  --username cdc_user --password cdc_password \
+  --slot-name flink_cdc_slot_test \
+  --s3-bucket flink-cdc-output
 ```
 
-#### 4. S3 Permissions (Production Mode)
+#### 4. S3 Plugin Issues
+```bash
+# Check if S3 plugin is enabled
+ls -la flink-1.18.0/plugins/flink-s3-fs-hadoop/
+
+# If plugin is missing, enable it
+cd flink-1.18.0
+mkdir -p plugins/flink-s3-fs-hadoop
+cp opt/flink-s3-fs-hadoop-1.18.0.jar plugins/flink-s3-fs-hadoop/
+
+# Restart Flink cluster after enabling plugin
+./bin/stop-cluster.sh
+./bin/start-cluster.sh
+```
+
+**Common S3 Plugin Errors:**
+- `UnknownStoreException: NoSuchBucket` - Create the S3 bucket first
+- `ClassNotFoundException: org.apache.hadoop.fs.s3a.S3AFileSystem` - S3 plugin not enabled
+- `IllegalArgumentException: AWS credentials not found` - Set AWS credentials
+
+#### 5. S3 Permissions (Production Mode)
 ```bash
 # Test S3 access
 aws s3 ls s3://your-bucket/
@@ -364,10 +478,16 @@ state.backend: hashmap
 
 ### CDC Configuration
 ```scala
-// In ProductionPostgresCdcJob
-val checkpointInterval = 30000L  // 30 seconds
+// In ProductionCdcJob
+val checkpointInterval = 30000L  // 30 seconds (production: 60000L)
 val maxConcurrentCheckpoints = 1
-val parallelism = 2
+val parallelism = 2  // production mode uses 2 for better throughput
+
+// S3-specific configuration
+val fileFormat = "avro"  // default format
+val compressionType = "snappy"  // default compression
+val maxFileSize = "128MB"
+val rolloverInterval = "5min"
 ```
 
 ### Database Optimization
@@ -422,6 +542,7 @@ SELECT pg_reload_conf();
 ### Pre-deployment
 - [ ] PostgreSQL logical replication configured
 - [ ] Flink 1.18.0 cluster deployed and tested
+- [ ] **S3 filesystem plugin enabled** (`flink-s3-fs-hadoop-1.18.0.jar` in plugins directory)
 - [ ] CDC 3.4.0 compatibility verified
 - [ ] S3 bucket and IAM permissions configured
 - [ ] Network connectivity tested
@@ -465,7 +586,21 @@ For issues and questions:
 
 ## 🏆 Version History
 
-### Current: v1.0.0
+### Current: v1.2.0
+- ✅ **Future-ready architecture** - Renamed to `ProductionCdcJob` for extensibility
+- ✅ **Generic CDC framework** - Removed PostgreSQL-specific naming constraints
+- ✅ **Generic project naming** - Updated from `postgres-cdc-s3` to `flink-cdc-s3`
+- ✅ **Extensible design** - Prepared for future MySQL/Oracle expansion
+- ✅ **Enhanced banner and messaging** - Reflects architectural readiness
+
+### v1.1.0
+- ✅ **Avro as default format** for S3 output with Snappy compression
+- ✅ **ProductionPostgresCdcJob** unified job for S3 writing (Avro default)
+- ✅ **Enhanced S3 integration** with proper error handling and monitoring
+- ✅ **Comprehensive file format support** (Avro, JSON, Parquet)
+- ✅ **Production-ready checkpointing** with S3 state backend support
+
+### v1.0.0
 - ✅ **Flink 1.18.0** + **CDC 3.4.0** compatibility
 - ✅ **IllegalAccessError resolved** completely
 - ✅ Production-ready with LOCAL TEST MODE
@@ -474,4 +609,4 @@ For issues and questions:
 
 ---
 
-**Production-Ready PostgreSQL CDC to S3 Pipeline** - Built with Apache Flink 1.18.0 and CDC 3.4.0, fully tested and verified with zero class loading issues. 🚀 
+**Production-Ready PostgreSQL CDC to S3 Pipeline** - Built with Apache Flink 1.18.0 and CDC 3.4.0, featuring **Avro as default format** with Snappy compression. **Currently focused on PostgreSQL** with extensible architecture for future MySQL/Oracle support. Fully tested and verified with zero class loading issues. 🚀 
