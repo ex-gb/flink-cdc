@@ -4,6 +4,7 @@ import org.apache.flink.cdc.connectors.postgres.PostgreSQLSource
 import org.apache.flink.cdc.debezium.JsonDebeziumDeserializationSchema
 import org.apache.flink.api.java.utils.ParameterTool
 import org.apache.flink.streaming.api.functions.source.SourceFunction
+import org.slf4j.{Logger, LoggerFactory}
 
 import java.util.Properties
 
@@ -18,6 +19,8 @@ import java.util.Properties
  * All keys use dot notation (not underscore) for consistency
  */
 trait AppConfig {
+  
+  private val logger: Logger = LoggerFactory.getLogger(getClass)
   
   // Load configuration from multiple sources
   lazy val params: ParameterTool = ParameterTool.fromSystemProperties()
@@ -132,18 +135,18 @@ trait AppConfig {
   
   // Print configuration summary
   def printConfigurationSummary(): Unit = {
-    println("=" * 80)
-    println("PostgreSQL CDC to S3 Configuration Summary")
-    println("=" * 80)
-    println(s"Job Name: ${FlinkConfig.jobName}")
-    println(s"Parallelism: ${FlinkConfig.parallelism}")
-    println(s"Source: ${PostgresConfig.hostname}:${PostgresConfig.port}/${PostgresConfig.database}")
-    println(s"Tables: ${PostgresConfig.tableList}")
-    println(s"Destination: ${S3Config.getFullPath}")
-    println(s"File Format: ${S3Config.fileFormat}")
-    println(s"Compression: ${S3Config.compressionType}")
-    println(s"Checkpoint Interval: ${FlinkConfig.checkpointInterval}ms")
-    println(s"Monitoring: ${MonitoringConfig.enableMetrics}")
-    println("=" * 80)
+    logger.info("=" * 80)
+    logger.info("PostgreSQL CDC to S3 Configuration Summary")
+    logger.info("=" * 80)
+    logger.info(s"Job Name: ${FlinkConfig.jobName}")
+    logger.info(s"Parallelism: ${FlinkConfig.parallelism}")
+    logger.info(s"Source: ${PostgresConfig.hostname}:${PostgresConfig.port}/${PostgresConfig.database}")
+    logger.info(s"Tables: ${PostgresConfig.tableList}")
+    logger.info(s"Destination: ${S3Config.getFullPath}")
+    logger.info(s"File Format: ${S3Config.fileFormat}")
+    logger.info(s"Compression: ${S3Config.compressionType}")
+    logger.info(s"Checkpoint Interval: ${FlinkConfig.checkpointInterval}ms")
+    logger.info(s"Monitoring: ${MonitoringConfig.enableMetrics}")
+    logger.info("=" * 80)
   }
 } 
