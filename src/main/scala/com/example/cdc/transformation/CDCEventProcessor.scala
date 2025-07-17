@@ -68,12 +68,52 @@ class CDCEventProcessor(errorTag: OutputTag[String], schemaChangeTag: OutputTag[
   }
   
   /**
-   * Process regular CDC events
+   * Process regular CDC events with enhanced validation and transformation
    */
   private def processRegularCDCEvent(originalValue: String): String = {
-    // For now, return original value with minimal processing
-    // TODO: Add data transformation, validation, and enrichment
-    originalValue
+    try {
+      val jsonNode = objectMapper.readTree(originalValue)
+      
+      // Add processing timestamp
+      val enrichedNode = jsonNode.asInstanceOf[com.fasterxml.jackson.databind.node.ObjectNode]
+      enrichedNode.put("processing_timestamp", System.currentTimeMillis())
+      enrichedNode.put("pipeline_version", "1.2.0")
+      
+      // Add data quality scores and validation
+      if (jsonNode.has("after") && !jsonNode.get("after").isNull) {
+        val dataQualityScore = calculateDataQualityScore(jsonNode.get("after"))
+        enrichedNode.put("data_quality_score", dataQualityScore)
+      }
+      
+      // Return enriched event
+      objectMapper.writeValueAsString(enrichedNode)
+      
+    } catch {
+      case _: Exception =>
+        // Return original value if enrichment fails
+        originalValue
+    }
+  }
+  
+  /**
+   * Calculate data quality score based on field completeness
+   */
+  private def calculateDataQualityScore(dataNode: com.fasterxml.jackson.databind.JsonNode): Double = {
+    if (dataNode == null || dataNode.isNull) return 0.0
+    
+    val fields = dataNode.fields()
+    var totalFields = 0
+    var nonNullFields = 0
+    
+    while (fields.hasNext) {
+      val field = fields.next()
+      totalFields += 1
+      if (!field.getValue.isNull && field.getValue.asText().nonEmpty) {
+        nonNullFields += 1
+      }
+    }
+    
+    if (totalFields == 0) 0.0 else nonNullFields.toDouble / totalFields
   }
   
   /**
