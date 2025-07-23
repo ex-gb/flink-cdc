@@ -108,9 +108,7 @@ object ProductionCdcJob extends AppConfig {
       // Create CDC source using the config with merged parameters
       logger.info("Creating database CDC source...")
       val cdcSource = config.buildCDCSource()
-      val cdcStream = env.addSource(cdcSource)
-        .name("database-cdc-source")
-        .uid("database-cdc-source")
+      val cdcStream = cdcSource.addToEnvironment(env, "database-cdc-source", "database-cdc-source")
       
       // Add raw CDC stream logging
       cdcStream

@@ -1,15 +1,13 @@
 package com.example.cdc.config
 
-import org.apache.flink.cdc.connectors.postgres.PostgreSQLSource
-import org.apache.flink.cdc.debezium.JsonDebeziumDeserializationSchema
 import org.apache.flink.api.java.utils.ParameterTool
-import org.apache.flink.streaming.api.functions.source.SourceFunction
 import org.slf4j.{Logger, LoggerFactory}
 
-import java.util.Properties
-
 /**
- * Production-ready configuration management for PostgreSQL CDC to S3 pipeline
+ * Production-ready configuration management for Multi-Database CDC to S3 pipeline
+ * 
+ * Now supports both PostgreSQL and MySQL databases with automatic detection
+ * and backward compatibility for existing PostgreSQL configurations.
  * 
  * Configuration is loaded using Flink ParameterTool with support for:
  * - Command line arguments
@@ -25,35 +23,35 @@ trait AppConfig {
   // Load configuration from multiple sources
   lazy val params: ParameterTool = ParameterTool.fromSystemProperties()
   
-  // PostgreSQL CDC Source Configuration
+  // Database configuration - abstracted for multi-database support
+  lazy val databaseConfig: DatabaseConfig = DatabaseConfigFactory.createDatabaseConfig(params)
+  
+  // Legacy PostgreSQL access for backward compatibility
   object PostgresConfig {
-    val hostname: String = params.get("postgres.hostname", params.get("hostname", "localhost"))
-    val port: Int = params.getInt("postgres.port", params.getInt("port", 5432))
-    val database: String = params.get("postgres.database", params.get("database", "cdc_source"))
-    val username: String = params.get("postgres.username", params.get("username", "postgres"))
-    val password: String = params.get("postgres.password", params.get("password", "postgres"))
-    val schemaList: String = params.get("postgres.schema-list", params.get("schema.list", "public"))
-    val tableList: String = params.get("postgres.table-list", params.get("tables", "public.users"))
-    val slotName: String = params.get("postgres.slot-name", params.get("slot.name", "flink_cdc_slot"))
-    val pluginName: String = params.get("postgres.plugin-name", "pgoutput")
-    val startupMode: String = params.get("postgres.startup-mode", "initial")
-    
-    // Debezium properties
-    val debeziumProperties: Properties = {
-      val props = new Properties()
-      props.setProperty("snapshot.mode", startupMode)
-      props.setProperty("decimal.handling.mode", params.get("postgres.decimal-handling-mode", "double"))
-      props.setProperty("binary.handling.mode", params.get("postgres.binary-handling-mode", "base64"))
-      props.setProperty("time.precision.mode", params.get("postgres.time-precision-mode", "connect"))
-      props.setProperty("include.schema.changes", params.get("postgres.include-schema-changes", "false"))
-      props.setProperty("slot.drop.on.stop", params.get("postgres.slot-drop-on-stop", "false"))
-      props.setProperty("heartbeat.interval.ms", params.get("postgres.heartbeat-interval-ms", "30000"))
-      props.setProperty("max.batch.size", params.get("postgres.max-batch-size", "2048"))
-      props.setProperty("max.queue.size", params.get("postgres.max-queue-size", "8192"))
-      props
+    val hostname: String = databaseConfig match {
+      case config: PostgresConfig => config.hostname
+      case _ => params.get("postgres.hostname", params.get("hostname", "localhost"))
     }
-    
-    def getTableArray: Array[String] = tableList.replaceAll(" ", "").split(",")
+    val port: Int = databaseConfig match {
+      case config: PostgresConfig => config.port
+      case _ => params.getInt("postgres.port", params.getInt("port", 5432))
+    }
+    val database: String = databaseConfig.database
+    val username: String = databaseConfig.username
+    val password: String = databaseConfig.password
+    val schemaList: String = databaseConfig.schemaList
+    val tableList: String = databaseConfig.tableList
+    val slotName: String = databaseConfig match {
+      case config: PostgresConfig => config.slotName
+      case _ => params.get("postgres.slot-name", params.get("slot.name", "flink_cdc_slot"))
+    }
+    val pluginName: String = databaseConfig match {
+      case config: PostgresConfig => config.pluginName
+      case _ => params.get("postgres.plugin-name", "pgoutput")
+    }
+    val startupMode: String = databaseConfig.startupMode
+    val debeziumProperties = databaseConfig.debeziumProperties
+    def getTableArray: Array[String] = databaseConfig.getTableArray
   }
   
   // S3 Sink Configuration
@@ -83,7 +81,10 @@ trait AppConfig {
   
   // Flink Job Configuration
   object FlinkConfig {
-    val jobName: String = params.get("flink.job-name", "PostgreSQL-CDC-to-S3")
+    val jobName: String = {
+      val dbType = databaseConfig.databaseType.name.toUpperCase
+      params.get("flink.job-name", s"$dbType-CDC-to-S3")
+    }
     val parallelism: Int = params.getInt("flink.parallelism", 1)
     val checkpointInterval: Long = params.getLong("flink.checkpoint-interval-ms", 30000)
     val checkpointTimeout: Long = params.getLong("flink.checkpoint-timeout-ms", 600000)
@@ -105,29 +106,17 @@ trait AppConfig {
     val alertingThresholdMs: Long = params.getLong("monitoring.alerting-threshold-ms", 60000)
   }
   
-  // Build PostgreSQL CDC Source
-  def buildCDCSource(): SourceFunction[String] = {
-    PostgreSQLSource.builder()
-      .hostname(PostgresConfig.hostname)
-      .port(PostgresConfig.port)
-      .database(PostgresConfig.database)
-      .schemaList(PostgresConfig.schemaList)
-      .tableList(PostgresConfig.tableList)
-      .username(PostgresConfig.username)
-      .password(PostgresConfig.password)
-      .slotName(PostgresConfig.slotName)
-      .decodingPluginName(PostgresConfig.pluginName)
-      .deserializer(new JsonDebeziumDeserializationSchema())
-      .debeziumProperties(PostgresConfig.debeziumProperties)
-      .build()
+  // Build CDC Source using the unified database abstraction
+  def buildCDCSource(): CDCSource = {
+    DatabaseSourceFactory.createSource(databaseConfig)
   }
   
   // Validate configuration
   def validateConfiguration(): Unit = {
-    require(PostgresConfig.hostname.nonEmpty, "PostgreSQL hostname is required")
-    require(PostgresConfig.database.nonEmpty, "PostgreSQL database is required")
-    require(PostgresConfig.username.nonEmpty, "PostgreSQL username is required")
-    require(PostgresConfig.tableList.nonEmpty, "PostgreSQL table list is required")
+    require(databaseConfig.hostname.nonEmpty, s"${databaseConfig.databaseType.name} hostname is required")
+    require(databaseConfig.database.nonEmpty, s"${databaseConfig.databaseType.name} database is required")
+    require(databaseConfig.username.nonEmpty, s"${databaseConfig.databaseType.name} username is required")
+    require(databaseConfig.tableList.nonEmpty, s"${databaseConfig.databaseType.name} table list is required")
     require(S3Config.bucketName.nonEmpty, "S3 bucket name is required")
     require(FlinkConfig.parallelism > 0, "Flink parallelism must be positive")
     require(FlinkConfig.checkpointInterval > 0, "Checkpoint interval must be positive")
@@ -135,13 +124,15 @@ trait AppConfig {
   
   // Print configuration summary
   def printConfigurationSummary(): Unit = {
+    val dbType = databaseConfig.databaseType.name.toUpperCase
     logger.info("=" * 80)
-    logger.info("PostgreSQL CDC to S3 Configuration Summary")
+    logger.info(s"$dbType CDC to S3 Configuration Summary")
     logger.info("=" * 80)
+    logger.info(s"Database Type: $dbType")
     logger.info(s"Job Name: ${FlinkConfig.jobName}")
     logger.info(s"Parallelism: ${FlinkConfig.parallelism}")
-    logger.info(s"Source: ${PostgresConfig.hostname}:${PostgresConfig.port}/${PostgresConfig.database}")
-    logger.info(s"Tables: ${PostgresConfig.tableList}")
+    logger.info(s"Source: ${databaseConfig.hostname}:${databaseConfig.port}/${databaseConfig.database}")
+    logger.info(s"Tables: ${databaseConfig.tableList}")
     logger.info(s"Destination: ${S3Config.getFullPath}")
     logger.info(s"File Format: ${S3Config.fileFormat}")
     logger.info(s"Compression: ${S3Config.compressionType}")

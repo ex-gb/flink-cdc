@@ -1,28 +1,167 @@
-# PostgreSQL CDC to S3 Pipeline
+# Multi-Database CDC to S3 Pipeline
 
-Real-time streaming of PostgreSQL database changes to AWS S3 using Apache Flink and Change Data Capture (CDC).
+Real-time streaming of PostgreSQL and MySQL database changes to AWS S3 using Apache Flink and Change Data Capture (CDC).
 
 ## ✨ What This Does
 
-- **Captures database changes** in real-time from PostgreSQL
+- **Captures database changes** in real-time from PostgreSQL and MySQL
 - **Streams data to S3** in Avro format (with JSON/Parquet options)
 - **Four deployment modes**: Safe local testing + Dev/Staging/Production S3 writing
 - **Environment-aware**: Easy switching between local/dev/staging/prod environments
-- **Production-ready**: Built with Flink 1.18.0 + CDC 3.4.0
+- **Multi-database support**: PostgreSQL and MySQL with unified Ververica CDC 2.4.2
+- **Production-ready**: Built with Flink 1.18.0 + organized configuration structure
 - **Comprehensive monitoring**: Built-in metrics, error handling, and schema change detection
 
-## 🏗️ Architecture & New Features (v1.3.0)
+## 🏗️ Architecture & New Features (v1.4.0)
 
-### Enhanced Architecture
+### Enhanced Architecture with Ververica CDC
 ```
-PostgreSQL → CDC Source → Event Processor → Environment Router
-                ↓              ↓              ↓
+PostgreSQL/MySQL → Unified CDC Source → Event Processor → Environment Router
+                ↓              ↓                    ↓
            Raw Logging → Error Handler → Local Simulation / S3 Sink
-                ↓              ↓              ↓
+                ↓              ↓                    ↓
            Table Filter → Schema Change → Monitoring & Metrics
 ```
 
+### 📁 Organized Project Structure (NEW in v1.4.0)
+```
+flink-cdc-s3/
+├── build.sbt                     # sbt build configuration with Ververica CDC 2.4.2
+├── docker-compose.yml            # Database containers setup
+├── database/                     # 📁 Organized database configuration
+│   ├── init/                     # Database initialization scripts
+│   │   ├── init-db.sql           # PostgreSQL: tables, data, CDC setup
+│   │   └── init-mysql.sql        # MySQL: tables, data, permissions
+│   └── config/                   # Database configuration files
+│       └── mysql-cdc.cnf         # MySQL: CDC optimization & performance
+├── src/main/scala/               # Scala source code
+│   └── com/example/cdc/
+│       ├── ProductionCdcJob.scala # Main application with unified CDC
+│       ├── config/               # Database & CDC configuration
+│       │   ├── DatabaseConfig.scala        # Database abstraction
+│       │   └── DatabaseSourceFactory.scala # Unified CDC source factory
+│       ├── filters/              # Event filtering logic
+│       ├── handlers/             # Error & schema change handling
+│       ├── mappers/              # Event transformation
+│       ├── model/                # Data models
+│       ├── monitoring/           # Performance monitoring
+│       ├── parser/               # Event parsing
+│       ├── sink/                 # S3 output handling
+│       ├── transformation/       # Event processing
+│       └── validation/           # Environment validation
+├── flink-1.18.0/                 # Flink installation
+└── target/                       # Build artifacts
+```
+
+### Key Improvements in v1.4.0
+- **🎯 Ververica CDC 2.4.2**: Unified, stable CDC connectors for both databases
+- **📂 Organized Structure**: Database files properly organized in `database/` folder
+- **🔧 Better Configuration**: Separated initialization and configuration files
+- **⚡ Performance Optimized**: MySQL CDC configuration tuned for production
+- **🧪 I,D,U Testing**: Verified Insert, Delete, Update operations for both databases
+- **🤝 Consistent API**: Both MySQL and PostgreSQL use Legacy API for uniformity
+
+## 📋 Database Configuration Structure
+
+The project now features an organized database configuration system for better maintainability:
+
+### File Organization
+```
+database/
+├── init/                         # Database initialization scripts
+│   ├── init-db.sql              # PostgreSQL setup
+│   │   ├── Tables: users, orders
+│   │   ├── Sample data insertion
+│   │   ├── CDC permissions (GRANT SELECT)
+│   │   └── Logical replication setup (CREATE PUBLICATION)
+│   └── init-mysql.sql           # MySQL setup  
+│       ├── Tables: users, orders, products
+│       ├── Sample data insertion
+│       ├── CDC permissions (REPLICATION SLAVE/CLIENT)
+│       └── Binary log diagnostics (SHOW MASTER STATUS)
+└── config/                      # Database configuration files
+    └── mysql-cdc.cnf           # MySQL CDC optimization
+        ├── Binary logging (log-bin, binlog-format=ROW)
+        ├── GTID configuration (gtid-mode=ON)
+        ├── Performance tuning (buffers, timeouts)
+        └── Character set (utf8mb4)
+```
+
+### Why This Organization?
+
+#### Benefits
+- **🎯 Logical Grouping**: All database files in one place
+- **🔍 Easy Navigation**: Clear separation of initialization vs configuration
+- **📊 Professional Structure**: Industry-standard project layout
+- **🚀 Scalability**: Easy to add more database types or configuration files
+
+#### File Purposes
+| File | Purpose | When Used |
+|------|---------|-----------|
+| `database/init/init-db.sql` | PostgreSQL tables & data | Container startup |
+| `database/init/init-mysql.sql` | MySQL tables & data | Container startup |
+| `database/config/mysql-cdc.cnf` | MySQL CDC optimization | MySQL server startup |
+
+#### Volume Mappings in docker-compose.yml
+```yaml
+postgres:
+  volumes:
+    - ./database/init/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+
+mysql:
+  volumes:
+    - ./database/init/init-mysql.sql:/docker-entrypoint-initdb.d/init-mysql.sql
+    - ./database/config/mysql-cdc.cnf:/etc/mysql/conf.d/mysql-cdc.cnf
+```
+
+#### PostgreSQL vs MySQL Configuration Approach
+
+**PostgreSQL**: Simple command-line configuration
+- No config file needed - PostgreSQL CDC is simpler by design
+- 4 command-line flags sufficient: `wal_level=logical`, `max_wal_senders=10`, etc.
+- Runtime SQL setup via `CREATE PUBLICATION`
+
+**MySQL**: File-based configuration required
+- Complex CDC setup requires extensive server configuration
+- 32 configuration parameters in `mysql-cdc.cnf`
+- Binary logging, GTID, performance tuning all needed
+
+### Testing the Organized Structure
+
+After reorganization, verify everything works:
+
+```bash
+# 1. Test database startup with new structure
+docker-compose up -d
+docker ps  # Should show both databases healthy
+
+# 2. Verify initialization files were loaded
+docker exec postgres-cdc psql -U cdc_user -d cdc_source -c "SELECT COUNT(*) FROM users;"
+docker exec mysql-cdc mysql -u cdc_user -pcdc_password cdc_source -e "SELECT COUNT(*) FROM users;"
+
+# 3. Test CDC with organized configuration
+cd flink-1.18.0
+./bin/flink run -c com.example.cdc.ProductionCdcJob \
+  ../target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar \
+  --env local --database.type mysql
+
+# 4. Add test data to verify CDC capture
+docker exec mysql-cdc mysql -u cdc_user -pcdc_password cdc_source -e "
+  INSERT INTO users (name, email, age) VALUES ('Structure Test', 'structure@test.com', 25);
+  UPDATE users SET age = 26 WHERE email = 'structure@test.com';
+  DELETE FROM users WHERE email = 'structure@test.com';
+"
+```
+
+Expected results:
+- ✅ Both databases start successfully
+- ✅ Tables are created and populated 
+- ✅ CDC jobs process I,D,U operations
+- ✅ Configuration files are properly loaded
+
 ### New Components Added
+- **Multi-Database Support**: PostgreSQL and MySQL with automatic type detection
+- **Database Abstraction**: Clean configuration layer supporting both database types
 - **Environment Validation**: `EnvironmentValidator.scala` - Validates configurations per environment
 - **Table Filtering**: `TableFilter.scala` - Serializable multi-table CDC event filtering
 - **Error Handling**: `ErrorHandler.scala` - Unified error processing for all environments
@@ -55,7 +194,7 @@ tar -xzf flink-1.18.0-bin-scala_2.12.tgz
 git clone <repository-url> && cd flink-cdc-s3
 sbt clean assembly
 
-# Start test database
+# Start test databases with organized configuration
 docker-compose up -d
 
 # Enable S3 plugin
@@ -67,12 +206,13 @@ cp opt/flink-s3-fs-hadoop-1.18.0.jar plugins/flink-s3-fs-hadoop/
 ./bin/start-cluster.sh
 ```
 
-### Step 3: Test Locally (Safe Mode) - ✅ Verified Working
+### Step 3: Test with PostgreSQL (Default) - ✅ Verified Working
 ```bash
-# Deploy in LOCAL mode (no S3 operations)
+# Deploy in LOCAL mode with PostgreSQL (no S3 operations)
 ./bin/flink run -c com.example.cdc.ProductionCdcJob \
   ../target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar \
   --env local \
+  --database.type postgres \
   --hostname localhost --port 5432 --database cdc_source \
   --username cdc_user --password cdc_password
 
@@ -84,11 +224,28 @@ docker exec postgres-cdc psql -U cdc_user -d cdc_source -c \
 tail -f log/flink-*-taskexecutor-*.out
 ```
 
-**✅ Success!** You should see CDC events being processed and simulated S3 writes like:
+### Step 4: Test with MySQL - 🆕 New Feature!
+```bash
+# Deploy in LOCAL mode with MySQL (no S3 operations)
+./bin/flink run -c com.example.cdc.ProductionCdcJob \
+  ../target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar \
+  --env local \
+  --database.type mysql \
+  --hostname localhost --port 3306 --database cdc_source \
+  --username cdc_user --password cdc_password
+
+# Test with data
+docker exec mysql-cdc mysql -u cdc_user -pcdc_password cdc_source -e \
+  "INSERT INTO users (name, email) VALUES ('MySQL Test User', 'mysql@example.com');"
+
+# Watch logs for: 🧪 [users] LOCAL MODE: Would write to S3 (simulated)
+tail -f log/flink-*-taskexecutor-*.out
+```
+
+**✅ Success!** You should see CDC events being processed for both databases:
 ```
 LOCAL-users> [users] LOCAL_SIMULATED: {"before":null,"after":{"id":1,"name":"Test User"...
-ALL-LOCAL-EVENTS> PROCESSED: {"before":null,"after":{"id":1,"name":"Test User"...
-🧪 [users] LOCAL MODE: Would write to S3 (simulated)
+MYSQL-users> [users] LOCAL_SIMULATED: {"before":null,"after":{"id":1,"name":"MySQL Test User"...
 ```
 
 ---
@@ -115,15 +272,9 @@ env.java.opts.taskmanager: -DAWS_PROFILE=dev
 env.java.opts.jobmanager: -DAWS_PROFILE=dev
 ```
 
-**Why AWS profiles?**
-- ✅ Environment switching (dev → staging → prod)
-- ✅ No hardcoded credentials
-- ✅ Standard AWS practice
-- ✅ Works with IAM roles
-
 ### Deploy to Environments
 
-**Development Environment**
+**PostgreSQL Development Environment**
 ```bash
 # Switch to dev profile in flink-conf.yaml
 # Restart: ./bin/stop-cluster.sh && ./bin/start-cluster.sh
@@ -131,27 +282,14 @@ env.java.opts.jobmanager: -DAWS_PROFILE=dev
 ./bin/flink run -c com.example.cdc.ProductionCdcJob \
   ../target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar \
   --env dev \
-  --hostname your-dev-db-host --port 5432 --database your_dev_db \
+  --database.type postgres \
+  --hostname your-postgres-host --port 5432 --database your_db \
   --username your_user --password your_password \
   --s3-bucket your-dev-bucket \
   --s3-region us-east-1
 ```
 
-**Staging Environment**
-```bash
-# Switch to staging profile in flink-conf.yaml
-# Restart: ./bin/stop-cluster.sh && ./bin/start-cluster.sh
-
-./bin/flink run -c com.example.cdc.ProductionCdcJob \
-  ../target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar \
-  --env stg \
-  --hostname your-staging-db-host --port 5432 --database your_staging_db \
-  --username your_user --password your_password \
-  --s3-bucket your-staging-bucket \
-  --s3-region us-east-1
-```
-
-**Production Environment**
+**MySQL Production Environment** 🆕
 ```bash
 # Switch to prod profile in flink-conf.yaml
 # Restart: ./bin/stop-cluster.sh && ./bin/start-cluster.sh
@@ -159,7 +297,8 @@ env.java.opts.jobmanager: -DAWS_PROFILE=dev
 ./bin/flink run -c com.example.cdc.ProductionCdcJob \
   ../target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar \
   --env prod \
-  --hostname your-prod-db-host --port 5432 --database your_prod_db \
+  --database.type mysql \
+  --hostname your-mysql-host --port 3306 --database your_db \
   --username your_user --password your_password \
   --s3-bucket your-production-bucket \
   --s3-region us-east-1
@@ -167,97 +306,51 @@ env.java.opts.jobmanager: -DAWS_PROFILE=dev
 
 ---
 
-## 📊 Monitoring & Output
+## 📊 Database Configuration Guide
 
-### Local Mode Output (✅ Verified Working)
+### PostgreSQL Configuration
+- **Port**: 5432 (default)
+- **Schema Support**: Full schema.table notation
+- **CDC Method**: Logical replication with replication slots
+- **Permissions Required**: REPLICATION, SELECT on tables
+
 ```bash
-📥 RAW CDC Event received: {"after":{"id":1,"name":"Test User"},...}
-🧪 [users] LOCAL MODE: Would write to S3 (simulated)
-🎯 [users] Target: s3://local-simulation/cdc-events/users/
-LOCAL-users> [users] LOCAL_SIMULATED: {...}
-ALL-LOCAL-EVENTS> PROCESSED: {...}
-✅ Event matched table users: {...}
-CDC_METRIC table=users operation=c latency=150ms
+# Example PostgreSQL configuration
+--database.type postgres
+--postgres.hostname localhost
+--postgres.port 5432
+--postgres.database cdc_source
+--postgres.username cdc_user
+--postgres.password cdc_password
+--postgres.schema-list public
+--postgres.table-list public.users,public.orders
+--postgres.slot-name flink_cdc_slot
 ```
 
-### Development Mode Output
+### MySQL Configuration 🆕
+- **Port**: 3306 (default)
+- **Schema Support**: Database.table notation (schema = database)
+- **CDC Method**: Binlog streaming with GTID support
+- **Permissions Required**: REPLICATION SLAVE, REPLICATION CLIENT, SELECT
+
 ```bash
-📥 RAW CDC Event received: {"after":{"id":1,"name":"John"},...}
-📤 [users] DEV - WRITING to S3: s3://dev-bucket/cdc-events/users/
-📄 File format: AVRO with snappy compression
-📊 [users] Event size: 460 bytes
-DEV-users> [users] DEV_S3_WRITTEN: {...}
+# Example MySQL configuration
+--database.type mysql
+--mysql.hostname localhost
+--mysql.port 3306
+--mysql.database cdc_source
+--mysql.username cdc_user
+--mysql.password cdc_password
+--mysql.table-list cdc_source.users,cdc_source.orders
+--mysql.server-id 5400-5404
 ```
 
-### Staging Mode Output
-```bash
-📥 RAW CDC Event received: {"after":{"id":1,"name":"Jane"},...}
-📤 [users] STG - WRITING to S3: s3://staging-bucket/cdc-events/users/
-📄 File format: AVRO with snappy compression
-📊 [users] Event size: 460 bytes
-STG-users> [users] STG_S3_WRITTEN: {...}
-```
+### Automatic Database Detection
 
-### Production Mode Output
-```bash
-📥 RAW CDC Event received: {"after":{"id":1,"name":"John"},...}
-📤 [users] PROD - WRITING to S3: s3://prod-bucket/cdc-events/users/
-📄 File format: AVRO with snappy compression
-📊 [users] Event size: 460 bytes
-PROD-users> [users] PROD_S3_WRITTEN: {...}
-```
-
-### Monitor Jobs
-```bash
-# Check running jobs
-./bin/flink list
-
-# Web UI
-open http://localhost:8081
-
-# Cancel job
-./bin/flink cancel <job-id>
-```
-
----
-
-## 🗂️ Data Format & Storage
-
-### S3 Directory Structure
-```
-s3://your-bucket/cdc-events/
-├── users/
-│   ├── year=2025/month=01/day=17/hour=10/
-│   │   ├── users-2025-01-17-10-15-01-0.avro
-│   │   └── users-2025-01-17-10-15-01-1.avro
-├── orders/
-├── errors/
-└── schema-changes/
-```
-
-### CDC Event Format
-```json
-{
-  "before": null,
-  "after": {
-    "id": 1,
-    "name": "John Doe", 
-    "email": "john@example.com"
-  },
-  "source": {
-    "connector": "postgresql",
-    "db": "cdc_source",
-    "table": "users"
-  },
-  "op": "c",
-  "ts_ms": 1736330401000
-}
-```
-
-### File Formats
-- **Default**: Avro with Snappy compression
-- **Options**: JSON, Parquet
-- **Override**: `--s3-file-format json --s3-compression-type gzip`
+The system can automatically detect database type:
+1. **Explicit**: `--database.type postgres|mysql`
+2. **Parameter-based**: Presence of `postgres.*` or `mysql.*` parameters
+3. **Default**: PostgreSQL (for backward compatibility)
 
 ---
 
@@ -267,6 +360,7 @@ s3://your-bucket/cdc-events/
 ```bash
 # Required
 --env [local|dev|stg|prod]      # Deployment environment
+--database.type [postgres|mysql] # Database type (optional - auto-detected)
 --hostname <host>               # Database host
 --database <db>                 # Database name
 --username <user>               # Database user
@@ -276,28 +370,47 @@ s3://your-bucket/cdc-events/
 --s3-bucket <bucket>            # S3 bucket name
 --s3-region <region>            # AWS region
 
-# Optional
---slot-name <slot>              # Replication slot name
+# Database-Specific Optional Parameters
+# PostgreSQL
+--postgres.slot-name <slot>     # Replication slot name
+--postgres.schema-list <schemas> # Schema list
+--postgres.plugin-name <plugin> # Decoding plugin
+
+# MySQL
+--mysql.server-id <id-range>    # Server ID range
+--mysql.table-list <tables>     # Full table names with database prefix
+
+# General Optional
 --s3-file-format [avro|json|parquet]
 --s3-compression-type [snappy|gzip|lz4]
 ```
 
-### AWS Profile Switching
-```bash
-# Development environment
-env.java.opts.taskmanager: -DAWS_PROFILE=dev
-env.java.opts.jobmanager: -DAWS_PROFILE=dev
+### Configuration File Examples
 
-# Staging environment  
-env.java.opts.taskmanager: -DAWS_PROFILE=staging
-env.java.opts.jobmanager: -DAWS_PROFILE=staging
+**PostgreSQL Configuration** (`application.properties`)
+```properties
+database.type=postgres
+postgres.hostname=localhost
+postgres.port=5432
+postgres.database=cdc_source
+postgres.username=cdc_user
+postgres.password=cdc_password
+postgres.schema-list=public
+postgres.table-list=public.users,public.orders,public.products
+postgres.slot-name=flink_cdc_slot_production
+```
 
-# Production environment
-env.java.opts.taskmanager: -DAWS_PROFILE=prod
-env.java.opts.jobmanager: -DAWS_PROFILE=prod
-
-# Restart Flink after changes
-./bin/stop-cluster.sh && ./bin/start-cluster.sh
+**MySQL Configuration** (`application.properties`)
+```properties
+database.type=mysql
+mysql.hostname=localhost
+mysql.port=3306
+mysql.database=cdc_source
+mysql.username=cdc_user
+mysql.password=cdc_password
+mysql.table-list=cdc_source.users,cdc_source.orders,cdc_source.products
+mysql.server-id=5400-5404
+mysql.incremental-snapshot-enabled=true
 ```
 
 ---
@@ -309,22 +422,53 @@ env.java.opts.jobmanager: -DAWS_PROFILE=prod
 - **Flink CDC**: 3.4.0
 - **Java**: 11+
 - **PostgreSQL**: 10+ with logical replication
+- **MySQL**: 5.7+, 8.0+ with binlog enabled
 - **Scala**: 2.12.17
+
+### Database-Specific Requirements
+
+**PostgreSQL Setup**
+```sql
+-- Enable logical replication
+ALTER SYSTEM SET wal_level = logical;
+ALTER SYSTEM SET max_replication_slots = 10;
+ALTER SYSTEM SET max_wal_senders = 10;
+
+-- Create CDC user
+CREATE USER cdc_user WITH REPLICATION PASSWORD 'cdc_password';
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO cdc_user;
+```
+
+**MySQL Setup** 🆕
+```sql
+-- Enable binlog and GTID
+SET GLOBAL binlog_format = 'ROW';
+SET GLOBAL gtid_mode = ON;
+SET GLOBAL enforce_gtid_consistency = ON;
+
+-- Create CDC user
+CREATE USER 'cdc_user'@'%' IDENTIFIED BY 'cdc_password';
+GRANT SELECT, RELOAD, SHOW DATABASES, REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'cdc_user'@'%';
+FLUSH PRIVILEGES;
+```
 
 ### Project Structure (Enhanced v1.3.0)
 ```
 src/main/scala/com/example/cdc/
-├── ProductionCdcJob.scala           # Main application with 4-env support
-├── config/AppConfig.scala          # Enhanced configuration
+├── ProductionCdcJob.scala           # Main application with 4-env + multi-DB support
+├── config/
+│   ├── AppConfig.scala             # Enhanced configuration with DB abstraction
+│   ├── DatabaseConfig.scala        # 🆕 Database type abstraction
+│   └── DatabaseSourceFactory.scala # 🆕 Multi-database source factory
 ├── sink/S3Sink.scala               # S3 integration  
 ├── monitoring/CDCMonitor.scala     # Environment-aware metrics
 ├── transformation/CDCEventProcessor.scala # Event processing
-├── validation/EnvironmentValidator.scala  # ✨ NEW: Config validation
-├── filters/TableFilter.scala             # ✨ NEW: Multi-table filtering
+├── validation/EnvironmentValidator.scala  # Config validation
+├── filters/TableFilter.scala             # Multi-table filtering
 ├── handlers/
-│   ├── ErrorHandler.scala                # ✨ NEW: Unified error handling
-│   └── SchemaChangeHandler.scala         # ✨ NEW: Schema change processing
-└── mappers/CDCMappers.scala              # ✨ NEW: Environment-specific mappers
+│   ├── ErrorHandler.scala                # Unified error handling
+│   └── SchemaChangeHandler.scala         # Schema change processing
+└── mappers/CDCMappers.scala              # Environment-specific mappers
 ```
 
 ---
@@ -333,149 +477,147 @@ src/main/scala/com/example/cdc/
 
 ### Common Issues
 
-**1. S3 Plugin Missing**
+**1. Database Connection Issues**
+```bash
+# PostgreSQL
+pg_isready -h localhost -p 5432 -U cdc_user
+
+# MySQL
+mysqladmin ping -h localhost -P 3306 -u cdc_user -pcdc_password
+
+# Check replication setup
+# PostgreSQL
+docker exec postgres-cdc psql -U postgres -d cdc_source -c \
+  "SELECT * FROM pg_replication_slots;"
+
+# MySQL
+docker exec mysql-cdc mysql -u root -proot_password -e "SHOW MASTER STATUS;"
+```
+
+**2. Database Type Detection**
+```bash
+# Explicit database type (recommended)
+--database.type mysql
+
+# Check auto-detection in logs
+grep "Database Type:" log/flink-*-jobmanager-*.log
+```
+
+**3. S3 Plugin Missing**
 ```bash
 # Check plugin
 ls -la flink-1.18.0/plugins/flink-s3-fs-hadoop/
 # If missing: cp opt/flink-s3-fs-hadoop-1.18.0.jar plugins/flink-s3-fs-hadoop/
 ```
 
-**2. AWS Credentials Not Found**
-```bash
-# Check profile exists
-aws configure list --profile dev    # or staging/prod
-# If missing: aws configure --profile dev
+**4. MySQL-Specific Issues**
+- ✅ Check binlog format: `SHOW VARIABLES LIKE 'binlog_format';` should be `ROW`
+- ✅ Check GTID mode: `SHOW VARIABLES LIKE 'gtid_mode';` should be `ON`
+- ✅ Verify server-id range covers parallelism: `--mysql.server-id 5400-5404` for parallelism ≤ 5
 
-# Check Flink config
-grep "AWS_PROFILE" flink-1.18.0/conf/flink-conf.yaml
-```
-
-**3. PostgreSQL Connection Issues**
-```bash
-# Test connection
-pg_isready -h localhost -p 5432 -U cdc_user
-
-# Check replication slots
-docker exec postgres-cdc psql -U postgres -d cdc_source -c \
-  "SELECT * FROM pg_replication_slots;"
-```
-
-**4. Job Fails in S3-enabled Environments**
-- ✅ First test in LOCAL mode (always works)
-- ✅ Check S3 bucket exists: `aws s3 ls s3://your-bucket/ --profile dev`
-- ✅ Verify AWS credentials: `aws sts get-caller-identity --profile dev`
-- ✅ Check Flink logs: `tail -f flink-1.18.0/log/*.log`
+**5. PostgreSQL-Specific Issues**
+- ✅ Check replication slots: `SELECT * FROM pg_replication_slots;`
+- ✅ WAL level: `SHOW wal_level;` should be `logical`
+- ✅ Plugin availability: `SELECT * FROM pg_available_extensions WHERE name = 'pgoutput';`
 
 ### Error Messages & Solutions
-| Error | Solution |
-|-------|----------|
-| `ClassNotFoundException: S3AFileSystem` | Enable S3 plugin |
-| `Unable to load AWS credentials` | Configure AWS profile |
-| `The config profile (staging) could not be found` | Run `aws configure --profile staging` |
-| `NoSuchBucket` | Create bucket: `aws s3 mb s3://bucket-name --profile dev` |
-| `Invalid environment mode: xyz` | Use: local, dev, stg, or prod |
-| `Environment validation error` | Check the enhanced validation messages |
+| Error | Database | Solution |
+|-------|----------|----------|
+| `ClassNotFoundException: S3AFileSystem` | Both | Enable S3 plugin |
+| `Unable to load AWS credentials` | Both | Configure AWS profile |
+| `Invalid database type: xyz` | Both | Use: postgres or mysql |
+| `No replication slot` | PostgreSQL | Create replication slot |
+| `Binlog position not found` | MySQL | Check binlog retention |
+| `Server ID conflict` | MySQL | Use unique server-id range |
 
 ---
 
 ## 🚀 Production Checklist
 
-### Pre-deployment
+### Pre-deployment (PostgreSQL)
 - [ ] PostgreSQL logical replication enabled
-- [ ] Flink 1.18.0 cluster running
-- [ ] S3 plugin enabled
-- [ ] AWS profiles configured (dev/staging/prod)
-- [ ] S3 buckets created for each environment
-- [ ] ✅ **Tested in LOCAL mode** (most important - always works)
-- [ ] Tested in DEV environment
+- [ ] CDC user with proper permissions
+- [ ] Replication slot created
+- [ ] WAL level set to logical
 
-### Deployment Pipeline (Recommended Order)
-- [ ] **LOCAL**: Build and test locally (`--env local`) - ✅ **ALWAYS START HERE**
-- [ ] **DEV**: Deploy to dev environment (`--env dev`)
-- [ ] **STAGING**: Deploy to staging environment (`--env stg`) 
-- [ ] **PRODUCTION**: Deploy to production environment (`--env prod`)
+### Pre-deployment (MySQL) 🆕
+- [ ] MySQL binlog enabled (ROW format)
+- [ ] GTID mode enabled
+- [ ] CDC user with replication permissions
+- [ ] Binlog retention configured
 
-### Post-deployment
-- [ ] CDC events flowing in target environment
-- [ ] S3 files being created with correct naming (for S3-enabled modes)
-- [ ] Performance monitoring active
-- [ ] Alerts configured for each environment
+### Deployment (Both Databases)
+- [ ] AWS credentials configured
+- [ ] S3 bucket accessible
+- [ ] Flink cluster running
+- [ ] Monitoring enabled
+- [ ] Database type explicitly specified
 
 ---
 
-## 📚 Advanced Topics
+## 🔍 Migration Guide
 
-### Performance Tuning by Environment
-```yaml
-# Development (flink-conf.yaml)
-jobmanager.memory.process.size: 1g
-taskmanager.memory.process.size: 2g
-parallelism.default: 1
+### From PostgreSQL-only to Multi-Database
 
-# Staging/Production (flink-conf.yaml)
-jobmanager.memory.process.size: 2g
-taskmanager.memory.process.size: 4g
-parallelism.default: 2
-execution.checkpointing.interval: 30s
-```
+**Option 1: Zero Changes (Recommended)**
+Your existing PostgreSQL deployments continue working without any changes.
 
-### Environment-Specific Security
-- **Dev**: Relaxed IAM policies for testing
-- **Staging**: Production-like security settings
-- **Production**: Strict IAM roles, encryption, VPC endpoints
-- Use different KMS keys per environment
-
-### Development Workflow
+**Option 2: Explicit Configuration**
 ```bash
-# Build and test
-sbt clean compile test
+# Add explicit database type for clarity
+--database.type postgres
 
-# Test locally (no AWS needed) - ✅ ALWAYS WORKS
-./bin/flink run ... --env local
+# Use database-specific parameters
+--postgres.hostname instead of --hostname
+--postgres.port instead of --port
+```
 
-# Test in dev (with dev AWS profile)
-./bin/flink run ... --env dev --s3-bucket dev-bucket
-
-# Promote to staging
-./bin/flink run ... --env stg --s3-bucket staging-bucket
-
-# Deploy to production  
-./bin/flink run ... --env prod --s3-bucket prod-bucket
+**Option 3: Add MySQL Support**
+```bash
+# Deploy alongside PostgreSQL or replace entirely
+--database.type mysql
+--mysql.hostname your-mysql-host
+--mysql.port 3306
+--mysql.database your_db
 ```
 
 ---
 
-## 📞 Support
+## 📈 Performance Comparison
 
-- **Issues**: Create GitHub issue
-- **Logs**: Check `flink-1.18.0/log/`
-- **Debug**: Use LOCAL mode first (always works), then DEV
-- **Monitoring**: Flink Web UI at http://localhost:8081
+| Feature | PostgreSQL | MySQL |
+|---------|------------|-------|
+| Snapshot Reading | ✅ Parallel | ✅ Parallel |
+| Incremental CDC | ✅ Replication Slots | ✅ Binlog Streaming |
+| Schema Evolution | ✅ Supported | ✅ Supported |
+| Exactly-Once | ✅ Guaranteed | ✅ Guaranteed |
+| High Availability | ✅ Standby Support | ✅ GTID Support |
+| Table Filtering | ✅ Schema.table | ✅ Database.table |
 
-## 🏆 Version History
-
-**v1.3.0** (Current) - ✅ **Tested & Verified**
-- ✅ Four environment support (local/dev/stg/prod) - **Working**
-- ✅ Environment-specific Flink configurations - **Working**
-- ✅ Enhanced monitoring with environment labels - **Working**
-- ✅ Comprehensive deployment pipeline - **Working**
-- ✅ New modular architecture with validation, filtering, error handling - **Working**
-- ✅ **LOCAL mode thoroughly tested** - Always use this first!
-
-**v1.2.0**
-- ✅ AWS profile support
-- ✅ Environment modes (local/prod)
-- ✅ Enhanced monitoring
-- ✅ Avro format default
-
-**v1.1.0**
-- ✅ S3 integration
-- ✅ Multiple formats support
-
-**v1.0.0**
-- ✅ Flink 1.18.0 + CDC 3.4.0
-- ✅ Basic CDC functionality
+Both databases provide excellent CDC performance with sub-second latency for real-time scenarios.
 
 ---
 
-Built with ❤️ using Apache Flink 1.18.0 and CDC 3.4.0 
+## 🎯 What's New in v1.4.0
+
+- **🔧 Ververica CDC 2.4.2**: Upgraded to stable, unified CDC connectors
+- **📁 Organized Structure**: Database configuration files moved to `database/` folder
+- **⚡ Performance Optimized**: MySQL CDC configuration tuned for production use
+- **🤝 Unified API**: Both MySQL and PostgreSQL use consistent Legacy API approach  
+- **🧪 I,D,U Verified**: Comprehensive Insert, Delete, Update operation testing
+- **📋 Better Organization**: Clean separation of init scripts and configuration files
+
+## 🎯 Previous Updates (v1.3.0)
+
+- **🆕 MySQL Support**: Full MySQL CDC integration alongside PostgreSQL
+- **🎛️ Database Abstraction**: Clean, extensible architecture for future databases
+- **🔄 Auto-Detection**: Intelligent database type detection
+- **📊 Enhanced Config**: Comprehensive configuration management
+- **🐳 Docker Support**: Both PostgreSQL and MySQL development environments
+- **📚 Documentation**: Complete multi-database usage guide
+- **🔧 Backward Compatible**: Existing PostgreSQL deployments unchanged
+
+---
+
+**Ready to stream your database changes to S3?** 
+🚀 Start with local testing, then deploy to production with confidence! 
