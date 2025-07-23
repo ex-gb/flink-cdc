@@ -41,7 +41,30 @@ class LocalSimulationMapper(tableName: String) extends MapFunction[String, Strin
 }
 
 /**
- * Serializable all events monitor - UNIFIED for both modes
+ * Serializable GCS logging mapper (GCS-enabled modes)
+ */
+class GCSLoggingMapper(tableName: String, bucketName: String, basePath: String, envMode: String) extends MapFunction[String, String] {
+  @transient private lazy val logger: Logger = LoggerFactory.getLogger(getClass)
+  
+  override def map(event: String): String = {
+    logger.info(s"🌥️ [$tableName] ${envMode.toUpperCase} - WRITING to GCS: gs://$bucketName/$basePath/$tableName/")
+    logger.info(s"📊 [$tableName] Event size: ${event.length} bytes")
+    event
+  }
+}
+
+/**
+ * Serializable GCS monitoring mapper (GCS-enabled modes)
+ */
+class GCSMonitoringMapper(tableName: String, envMode: String) extends MapFunction[String, String] {
+  override def map(event: String): String = {
+    val shortEvent = if (event.length > 200) event.take(200) + "..." else event
+    s"[$tableName] ${envMode.toUpperCase}_GCS_WRITTEN: $shortEvent"
+  }
+}
+
+/**
+ * Serializable all events monitor - UNIFIED for all modes
  */
 class AllEventsMonitor(envMode: String) extends MapFunction[String, String] {
   @transient private lazy val logger: Logger = LoggerFactory.getLogger(getClass)

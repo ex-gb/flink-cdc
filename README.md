@@ -39,7 +39,7 @@ flink-cdc-s3/
 │       └── mysql-cdc.cnf         # MySQL: CDC optimization & performance
 ├── src/main/scala/               # Scala source code
 │   └── com/example/cdc/
-│       ├── ProductionCdcJob.scala # Main application with unified CDC
+│       ├── main.scala            # Main application with unified CDC
 │       ├── config/               # Database & CDC configuration
 │       │   ├── DatabaseConfig.scala        # Database abstraction
 │       │   └── DatabaseSourceFactory.scala # Unified CDC source factory
@@ -164,7 +164,9 @@ Expected results:
 
 ### New Components Added
 - **Multi-Database Support**: PostgreSQL and MySQL with automatic type detection
+- **Multi-Cloud Support**: AWS S3 and Google Cloud Storage with unified API
 - **Database Abstraction**: Clean configuration layer supporting both database types
+- **Cloud Storage Abstraction**: S3Sink and GCSSink with consistent interfaces
 - **Environment Validation**: `EnvironmentValidator.scala` - Validates configurations per environment
 - **Table Filtering**: `TableFilter.scala` - Serializable multi-table CDC event filtering
 - **Error Handling**: `ErrorHandler.scala` - Unified error processing for all environments
@@ -269,6 +271,26 @@ MYSQL-users> [users] LOCAL_SIMULATED: {"before":null,"after":{"id":1,"name":"MyS
 - ✅ **DELETE**: `"op":"d"` - Record deletion with final state
 - ✅ **Latency**: Sub-second event capture and processing
 - ✅ **GTID Tracking**: MySQL transaction consistency verified
+
+### 📊 Flink Web UI Monitoring
+
+**Monitor Running Jobs**: Access Flink Web UI at `http://localhost:8081`
+
+![Flink Dashboard - Running CDC Jobs](image/flink_ui.png)
+
+**Expected Results:**
+- ✅ **MYSQL-CDC-to-S3**: MySQL CDC job processing database changes
+- ✅ **POSTGRES-CDC-to-S3**: PostgreSQL CDC job processing database changes  
+- ✅ **Status**: Both jobs showing RUNNING status with active tasks
+- ✅ **Duration**: Jobs maintain stable execution over time
+- ✅ **Tasks**: Each job running with 1 task (configurable parallelism)
+
+**Monitoring Features Available:**
+- **Job Overview**: Real-time job status and execution metrics
+- **Task Managers**: Resource utilization and task distribution
+- **Checkpoints**: Checkpoint success rates and state management
+- **Logs**: Detailed job execution and error logs
+- **Metrics**: Throughput, latency, and backpressure monitoring
 
 ---
 
@@ -744,15 +766,17 @@ GRANT SELECT, RELOAD, SHOW DATABASES, REPLICATION SLAVE, REPLICATION CLIENT ON *
 FLUSH PRIVILEGES;
 ```
 
-### Project Structure (Enhanced v1.3.0)
+### Project Structure (Enhanced v1.4.1)
 ```
 src/main/scala/com/example/cdc/
-├── ProductionCdcJob.scala           # Main application with 4-env + multi-DB support
+├── main.scala                       # Main application with 4-env + multi-DB + multi-cloud support
 ├── config/
-│   ├── AppConfig.scala             # Enhanced configuration with DB abstraction
-│   ├── DatabaseConfig.scala        # 🆕 Database type abstraction
-│   └── DatabaseSourceFactory.scala # 🆕 Multi-database source factory
-├── sink/S3Sink.scala               # S3 integration  
+│   ├── AppConfig.scala             # Enhanced configuration with DB abstraction + GCP support
+│   ├── DatabaseConfig.scala        # Database type abstraction
+│   └── DatabaseSourceFactory.scala # Multi-database source factory
+├── sink/
+│   ├── S3Sink.scala                # AWS S3 integration  
+│   └── GCSSink.scala               # 🆕 Google Cloud Storage integration
 ├── monitoring/CDCMonitor.scala     # Environment-aware metrics
 ├── transformation/CDCEventProcessor.scala # Event processing
 ├── validation/EnvironmentValidator.scala  # Config validation
@@ -804,6 +828,18 @@ ls -la flink-1.18.0/plugins/flink-s3-fs-hadoop/
 # Check GCP GCS plugin (if using GCS)
 ls -la flink-1.18.0/plugins/flink-gs-fs-hadoop/
 # If missing: cp opt/flink-gs-fs-hadoop-1.18.0.jar plugins/flink-gs-fs-hadoop/
+```
+
+**4. Jobs Not Visible in Flink Web UI**
+```bash
+# Check Flink cluster status
+./bin/flink list
+
+# Access Web UI
+open http://localhost:8081
+
+# Verify job submission was successful
+tail -f log/flink-*-jobmanager-*.log
 ```
 
 **4. MySQL-Specific Issues**
@@ -911,6 +947,7 @@ Both databases provide excellent CDC performance with sub-second latency for rea
 - **🎯 Sub-second Latency**: Real-time CDC event capture and processing verified
 - **🔗 Cloud Provider Parameter**: Use `--cloud.provider aws|gcp` to select target platform
 - **🚨 Production Recovery**: Comprehensive savepoint operations and recovery procedures
+- **📊 Flink Web UI**: Visual monitoring dashboard showing running CDC jobs and metrics
 
 ## 🎯 Previous Updates (v1.4.0)
 
