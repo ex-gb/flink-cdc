@@ -9,7 +9,7 @@ lazy val mysqlCdcVersion = "2.4.2"
 // Project configuration
 lazy val root = (project in file("."))
   .settings(
-    name := "flink-cdc-s3",
+    name := "flink-cdc-multicloud",
     organization := "com.example",
     
     libraryDependencies ++= Seq(
@@ -23,6 +23,17 @@ lazy val root = (project in file("."))
       "com.ververica" % "flink-connector-mysql-cdc" % mysqlCdcVersion,
       "org.apache.flink" % "flink-avro" % flinkVersion % "provided",
       "org.apache.flink" % "flink-connector-files" % flinkVersion % "provided",
+      
+      // GCP GCS Dependencies - Google Cloud Storage support
+      "org.apache.flink" % "flink-gs-fs-hadoop" % flinkVersion,
+      "com.google.cloud" % "google-cloud-storage" % "2.29.1",
+      "com.google.auth" % "google-auth-library-oauth2-http" % "1.19.0",
+      "com.google.auth" % "google-auth-library-credentials" % "1.19.0",
+      
+      // AWS S3 Dependencies (for backward compatibility and migration support)
+      "org.apache.flink" % "flink-s3-fs-hadoop" % flinkVersion,
+      "org.apache.hadoop" % "hadoop-aws" % "3.3.6",
+      "com.amazonaws" % "aws-java-sdk-s3" % "1.12.565",
       
       // Avro for serialization
       "org.apache.avro" % "avro" % "1.11.3",
@@ -76,6 +87,9 @@ lazy val root = (project in file("."))
       case x if x.contains("parquet") => MergeStrategy.first
       case x if x.contains("avro") => MergeStrategy.first
       case x if x.contains("aws") => MergeStrategy.first
+      case x if x.contains("google") => MergeStrategy.first
+      case x if x.contains("gcp") => MergeStrategy.first
+      case x if x.contains("auth") => MergeStrategy.first
       case x if x.contains("debezium") => MergeStrategy.first
       case x if x.contains("kafka") => MergeStrategy.first
       case x if x.contains("connect") => MergeStrategy.first
@@ -89,7 +103,7 @@ lazy val root = (project in file("."))
     },
     
     // Assembly settings
-    assembly / assemblyJarName := "flink-cdc-s3-production-assembly-1.2.0.jar",
+    assembly / assemblyJarName := "flink-cdc-gcs-assembly.jar",
     assembly / assemblyExcludedJars := {
       val cp = (assembly / fullClasspath).value
       cp.filter { f =>

@@ -39,7 +39,7 @@ flink-cdc-s3/
 │       └── mysql-cdc.cnf         # MySQL: CDC optimization & performance
 ├── src/main/scala/               # Scala source code
 │   └── com/example/cdc/
-│       ├── ProductionCdcJob.scala # Main application with unified CDC
+│       ├── main.scala            # Main application with unified CDC
 │       ├── config/               # Database & CDC configuration
 │       │   ├── DatabaseConfig.scala        # Database abstraction
 │       │   └── DatabaseSourceFactory.scala # Unified CDC source factory
@@ -164,7 +164,9 @@ Expected results:
 
 ### New Components Added
 - **Multi-Database Support**: PostgreSQL and MySQL with automatic type detection
+- **Multi-Cloud Support**: AWS S3 and Google Cloud Storage with unified API
 - **Database Abstraction**: Clean configuration layer supporting both database types
+- **Cloud Storage Abstraction**: S3Sink and GCSSink with consistent interfaces
 - **Environment Validation**: `EnvironmentValidator.scala` - Validates configurations per environment
 - **Table Filtering**: `TableFilter.scala` - Serializable multi-table CDC event filtering
 - **Error Handling**: `ErrorHandler.scala` - Unified error processing for all environments
@@ -744,15 +746,17 @@ GRANT SELECT, RELOAD, SHOW DATABASES, REPLICATION SLAVE, REPLICATION CLIENT ON *
 FLUSH PRIVILEGES;
 ```
 
-### Project Structure (Enhanced v1.3.0)
+### Project Structure (Enhanced v1.4.1)
 ```
 src/main/scala/com/example/cdc/
-├── ProductionCdcJob.scala           # Main application with 4-env + multi-DB support
+├── main.scala                       # Main application with 4-env + multi-DB + multi-cloud support
 ├── config/
-│   ├── AppConfig.scala             # Enhanced configuration with DB abstraction
-│   ├── DatabaseConfig.scala        # 🆕 Database type abstraction
-│   └── DatabaseSourceFactory.scala # 🆕 Multi-database source factory
-├── sink/S3Sink.scala               # S3 integration  
+│   ├── AppConfig.scala             # Enhanced configuration with DB abstraction + GCP support
+│   ├── DatabaseConfig.scala        # Database type abstraction
+│   └── DatabaseSourceFactory.scala # Multi-database source factory
+├── sink/
+│   ├── S3Sink.scala                # AWS S3 integration  
+│   └── GCSSink.scala               # 🆕 Google Cloud Storage integration
 ├── monitoring/CDCMonitor.scala     # Environment-aware metrics
 ├── transformation/CDCEventProcessor.scala # Event processing
 ├── validation/EnvironmentValidator.scala  # Config validation
