@@ -276,7 +276,7 @@ MYSQL-users> [users] LOCAL_SIMULATED: {"before":null,"after":{"id":1,"name":"MyS
 
 **Monitor Running Jobs**: Access Flink Web UI at `http://localhost:8081`
 
-![Flink Dashboard - Running CDC Jobs](https://github.com/user-attachments/assets/flink-dashboard-cdc-jobs.png)
+![Flink Dashboard - Running CDC Jobs](flink_ui.png)
 
 **Expected Results:**
 - ✅ **MYSQL-CDC-to-S3**: MySQL CDC job processing database changes
