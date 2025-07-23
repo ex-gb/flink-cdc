@@ -1,26 +1,29 @@
-# Multi-Database CDC to S3 Pipeline
+# Multi-Database CDC to Cloud Storage Pipeline
 
-Real-time streaming of PostgreSQL and MySQL database changes to AWS S3 using Apache Flink and Change Data Capture (CDC).
+Real-time streaming of PostgreSQL and MySQL database changes to **AWS S3** and **Google Cloud Storage (GCS)** using Apache Flink and Change Data Capture (CDC).
 
 ## ✨ What This Does
 
 - **Captures database changes** in real-time from PostgreSQL and MySQL
-- **Streams data to S3** in Avro format (with JSON/Parquet options)
-- **Four deployment modes**: Safe local testing + Dev/Staging/Production S3 writing
+- **Multi-cloud storage**: Streams data to **AWS S3** or **Google Cloud Storage (GCS)** in Avro format (with JSON/Parquet options)
+- **Four deployment modes**: Safe local testing + Dev/Staging/Production cloud storage writing
 - **Environment-aware**: Easy switching between local/dev/staging/prod environments
 - **Multi-database support**: PostgreSQL and MySQL with unified Ververica CDC 2.4.2
+- **Multi-cloud support**: Choose between AWS (S3) or GCP (GCS) deployment targets
 - **Production-ready**: Built with Flink 1.18.0 + organized configuration structure
 - **Comprehensive monitoring**: Built-in metrics, error handling, and schema change detection
 
 ## 🏗️ Architecture & New Features (v1.4.0)
 
-### Enhanced Architecture with Ververica CDC
+### Enhanced Multi-Cloud Architecture with Ververica CDC
 ```
 PostgreSQL/MySQL → Unified CDC Source → Event Processor → Environment Router
                 ↓              ↓                    ↓
-           Raw Logging → Error Handler → Local Simulation / S3 Sink
+           Raw Logging → Error Handler → Local Simulation / Cloud Storage
                 ↓              ↓                    ↓
            Table Filter → Schema Change → Monitoring & Metrics
+                                                   ↓
+                                          AWS S3 Sink ← Cloud Provider → GCS Sink
 ```
 
 ### 📁 Organized Project Structure (NEW in v1.4.0)
@@ -46,7 +49,7 @@ flink-cdc-s3/
 │       ├── model/                # Data models
 │       ├── monitoring/           # Performance monitoring
 │       ├── parser/               # Event parsing
-│       ├── sink/                 # S3 output handling
+│       ├── sink/                 # Cloud storage output handling (S3/GCS)
 │       ├── transformation/       # Event processing
 │       └── validation/           # Environment validation
 ├── flink-1.18.0/                 # Flink installation
@@ -169,12 +172,12 @@ Expected results:
 - **Enhanced Monitoring**: Environment-aware metrics and logging
 
 ### Environment-Specific Configurations
-| Mode | Icon | Description | S3 Operations | Parallelism | Checkpointing | Use Case |
-|------|------|-------------|---------------|-------------|---------------|----------|
+| Mode | Icon | Description | Cloud Operations | Parallelism | Checkpointing | Use Case |
+|------|------|-------------|------------------|-------------|---------------|----------|
 | `--env local` | 🧪 | Safe testing | **Simulated only** | 1 | 30s (lenient) | Local development |
-| `--env dev` | 🔧 | Development | Dev S3 writes | 1 | 45s (moderate) | Development testing |
-| `--env stg` | 🎭 | Staging | Staging S3 writes | 2 | 60s (production-like) | Pre-production validation |
-| `--env prod` | 🚀 | Production | Production S3 writes | 2 | 60s (robust) | Live production |
+| `--env dev` | 🔧 | Development | Dev cloud writes (S3/GCS) | 1 | 45s (moderate) | Development testing |
+| `--env stg` | 🎭 | Staging | Staging cloud writes (S3/GCS) | 2 | 60s (production-like) | Pre-production validation |
+| `--env prod` | 🚀 | Production | Production cloud writes (S3/GCS) | 2 | 60s (robust) | Live production |
 
 ## 🚀 Quick Start (5 Minutes)
 
@@ -197,10 +200,14 @@ sbt clean assembly
 # Start test databases with organized configuration
 docker-compose up -d
 
-# Enable S3 plugin
+# Enable cloud storage plugins
 cd flink-1.18.0
+# For AWS S3 support
 mkdir -p plugins/flink-s3-fs-hadoop
 cp opt/flink-s3-fs-hadoop-1.18.0.jar plugins/flink-s3-fs-hadoop/
+# For GCP GCS support (if using GCS)
+mkdir -p plugins/flink-gs-fs-hadoop
+cp opt/flink-gs-fs-hadoop-1.18.0.jar plugins/flink-gs-fs-hadoop/ || echo "GCS plugin not included in this Flink distribution"
 
 # Start Flink
 ./bin/start-cluster.sh
@@ -220,7 +227,7 @@ cp opt/flink-s3-fs-hadoop-1.18.0.jar plugins/flink-s3-fs-hadoop/
 docker exec postgres-cdc psql -U cdc_user -d cdc_source -c \
   "INSERT INTO public.users (name, email) VALUES ('Test User', 'test@example.com');"
 
-# Watch logs for: 🧪 [users] LOCAL MODE: Would write to S3 (simulated)
+# Watch logs for: 🧪 [users] LOCAL MODE: Would write to cloud storage (simulated)
 tail -f log/flink-*-taskexecutor-*.out
 ```
 
@@ -246,7 +253,7 @@ docker exec mysql-cdc mysql -u cdc_user -pcdc_password cdc_source -e \
 docker exec mysql-cdc mysql -u cdc_user -pcdc_password cdc_source -e \
   "DELETE FROM users WHERE name = 'MySQL Test User';"
 
-# Watch logs for: 🧪 [users] LOCAL MODE: Would write to S3 (simulated)
+# Watch logs for: 🧪 [users] LOCAL MODE: Would write to cloud storage (simulated)
 tail -f log/flink-*-taskexecutor-*.out
 ```
 
@@ -267,9 +274,11 @@ MYSQL-users> [users] LOCAL_SIMULATED: {"before":null,"after":{"id":1,"name":"MyS
 
 ## 🔧 Production Setup
 
-### Configure AWS Credentials (One-Time)
+### Choose Your Cloud Provider
 
-**Option 1: AWS Profiles (Recommended)**
+**Option A: AWS S3 Configuration**
+
+Configure AWS credentials (one-time setup):
 ```bash
 # Setup environment-specific profiles
 aws configure --profile dev
@@ -287,9 +296,31 @@ env.java.opts.taskmanager: -DAWS_PROFILE=dev
 env.java.opts.jobmanager: -DAWS_PROFILE=dev
 ```
 
+**Option B: Google Cloud GCS Configuration**
+
+Configure GCP credentials (one-time setup):
+```bash
+# Install Google Cloud CLI and authenticate
+gcloud auth application-default login
+
+# Set your GCP project
+gcloud config set project YOUR_PROJECT_ID
+
+# Configure Flink for GCS
+nano conf/flink-conf.yaml
+```
+
+Add to `flink-conf.yaml`:
+```yaml
+# GCS configuration
+fs.gs.project.id: YOUR_PROJECT_ID
+fs.gs.auth.service.account.enable: true
+fs.gs.auth.type: APPLICATION_DEFAULT
+```
+
 ### Deploy to Environments
 
-**PostgreSQL Development Environment**
+**AWS S3 - PostgreSQL Development Environment**
 ```bash
 # Switch to dev profile in flink-conf.yaml
 # Restart: ./bin/stop-cluster.sh && ./bin/start-cluster.sh
@@ -297,6 +328,7 @@ env.java.opts.jobmanager: -DAWS_PROFILE=dev
 ./bin/flink run -c com.example.cdc.ProductionCdcJob \
   ../target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar \
   --env dev \
+  --cloud.provider aws \
   --database.type postgres \
   --hostname your-postgres-host --port 5432 --database your_db \
   --username your_user --password your_password \
@@ -304,7 +336,24 @@ env.java.opts.jobmanager: -DAWS_PROFILE=dev
   --s3-region us-east-1
 ```
 
-**MySQL Production Environment** 🆕
+**GCP GCS - PostgreSQL Development Environment** 🆕
+```bash
+# Configure GCS in flink-conf.yaml
+# Restart: ./bin/stop-cluster.sh && ./bin/start-cluster.sh
+
+./bin/flink run -c com.example.cdc.ProductionCdcJob \
+  ../target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar \
+  --env dev \
+  --cloud.provider gcp \
+  --database.type postgres \
+  --hostname your-postgres-host --port 5432 --database your_db \
+  --username your_user --password your_password \
+  --gcs-bucket your-dev-bucket \
+  --gcp-project your-project-id \
+  --gcs-region us-central1
+```
+
+**AWS S3 - MySQL Production Environment**
 ```bash
 # Switch to prod profile in flink-conf.yaml
 # Restart: ./bin/stop-cluster.sh && ./bin/start-cluster.sh
@@ -312,12 +361,147 @@ env.java.opts.jobmanager: -DAWS_PROFILE=dev
 ./bin/flink run -c com.example.cdc.ProductionCdcJob \
   ../target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar \
   --env prod \
+  --cloud.provider aws \
   --database.type mysql \
   --hostname your-mysql-host --port 3306 --database your_db \
   --username your_user --password your_password \
   --s3-bucket your-production-bucket \
   --s3-region us-east-1
 ```
+
+**GCP GCS - MySQL Production Environment** 🆕
+```bash
+# Configure GCS in flink-conf.yaml
+# Restart: ./bin/stop-cluster.sh && ./bin/start-cluster.sh
+
+./bin/flink run -c com.example.cdc.ProductionCdcJob \
+  ../target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar \
+  --env prod \
+  --cloud.provider gcp \
+  --database.type mysql \
+  --hostname your-mysql-host --port 3306 --database your_db \
+  --username your_user --password your_password \
+  --gcs-bucket your-production-bucket \
+  --gcp-project your-project-id \
+  --gcs-region us-central1
+```
+
+---
+
+## 💾 Checkpoint & Savepoint Management
+
+The application provides **automatic checkpoint and savepoint management** with cloud storage integration for fault tolerance and job recovery.
+
+### 🔄 Automatic State Management
+
+**Environment-Specific Checkpoint Configuration:**
+
+| Environment | Checkpoint Interval | Timeout | State Backend | Use Case |
+|-------------|-------------------|---------|---------------|----------|
+| **Local** | 30s | 1 min | `file:///tmp/flink-checkpoints-local` | Development testing |
+| **Dev** | 45s | 2 min | `file:///tmp/flink-checkpoints-dev` | Development validation |
+| **Staging** | 60s | 4 min | `file:///tmp/flink-checkpoints-staging` | Pre-production testing |
+| **Production** | 60s | 5 min | **Cloud Storage** (S3/GCS) | Live production |
+
+### ☁️ Cloud Storage Integration
+
+**AWS S3 State Backend:**
+```
+Checkpoints: s3a://flink-cdc-checkpoints/checkpoints/{env}/
+Savepoints:  s3a://flink-cdc-checkpoints/savepoints/{env}/
+```
+
+**Google Cloud Storage State Backend:**
+```
+Checkpoints: gs://flink-cdc-config-{project}/checkpoints/{env}/
+Savepoints:  gs://flink-cdc-config-{project}/savepoints/{env}/
+```
+
+### 🛠️ Manual Savepoint Operations
+
+**Create Manual Savepoint:**
+```bash
+# Get running job ID
+JOB_ID=$(./bin/flink list | grep RUNNING | awk '{print $2}')
+
+# Create savepoint (cloud storage)
+./bin/flink savepoint $JOB_ID
+# Output: Savepoint completed. Path: s3a://flink-cdc-checkpoints/savepoints/prod/savepoint-123456
+
+# Create savepoint with custom path
+./bin/flink savepoint $JOB_ID s3a://your-bucket/custom-savepoint-path
+```
+
+**Restore from Savepoint:**
+```bash
+# Stop current job
+./bin/flink cancel $JOB_ID
+
+# Restart from savepoint
+./bin/flink run -s s3a://flink-cdc-checkpoints/savepoints/prod/savepoint-123456 \
+  -c com.example.cdc.ProductionCdcJob \
+  ../target/scala-2.12/flink-cdc-s3-production-assembly-1.2.0.jar \
+  --env prod --database.type postgres
+```
+
+### 📋 Configuration Parameters
+
+**Checkpoint Configuration (configurable via properties):**
+```properties
+# Checkpoint timing
+flink.checkpoint-interval-ms=60000              # 1 minute
+flink.checkpoint-timeout-ms=300000              # 5 minutes
+flink.min-pause-between-checkpoints-ms=10000    # 10 seconds
+flink.max-concurrent-checkpoints=1
+
+# Checkpoint behavior
+flink.enable-unaligned-checkpoints=false
+flink.externalized-checkpoints=RETAIN_ON_CANCELLATION
+
+# Cloud storage paths (automatically set based on cloud provider)
+flink.checkpoints-directory=gs://flink-cdc-config-{project}/checkpoints/{env}
+flink.savepoints-directory=gs://flink-cdc-config-{project}/savepoints/{env}
+```
+
+### 🔧 Checkpoint Monitoring
+
+**Monitor Checkpoint Progress:**
+```bash
+# View checkpoint statistics
+./bin/flink list -r
+# Shows: Job ID, job name, checkpoint info
+
+# Check latest checkpoint
+ls -la /tmp/flink-checkpoints-local/  # Local
+aws s3 ls s3://flink-cdc-checkpoints/checkpoints/prod/  # AWS
+gsutil ls gs://flink-cdc-config-PROJECT/checkpoints/prod/  # GCP
+```
+
+**Health Checks:**
+- ✅ **Checkpoint Success Rate**: Should be >95% for production
+- ✅ **Checkpoint Duration**: Should be <30s for optimal performance  
+- ✅ **Recovery Time**: Jobs restore from checkpoints in 30-60s
+- ✅ **Data Consistency**: Exactly-once processing guarantees
+
+### 🚨 Recovery Scenarios
+
+**Automatic Recovery:**
+- **Task Manager Failure**: Automatic restart from latest checkpoint
+- **Job Manager Failure**: Automatic restart with externalized checkpoints
+- **Network Issues**: Checkpoint-based recovery maintains exactly-once semantics
+
+**Manual Recovery:**
+- **Data Corruption**: Restore from previous savepoint
+- **Configuration Changes**: Restart with savepoint for state migration
+- **Rollback Scenarios**: Use savepoints for safe production rollbacks
+
+### 💡 Best Practices
+
+1. **Regular Savepoints**: Create savepoints before deployments
+2. **Checkpoint Monitoring**: Set up alerts for checkpoint failures
+3. **Retention Policy**: Keep 3-5 recent savepoints for rollback capability
+4. **Testing**: Verify recovery procedures in staging environment
+5. **Storage Lifecycle**: Configure cloud storage lifecycle policies for cost optimization
 
 ---
 
@@ -396,9 +580,17 @@ The system can automatically detect database type:
 --username <user>               # Database user
 --password <pass>               # Database password
 
-# Required for S3-enabled modes (dev/stg/prod)
+# Required for cloud-enabled modes (dev/stg/prod)
+# AWS S3 Configuration
+--cloud.provider aws            # Use AWS S3 (default)
 --s3-bucket <bucket>            # S3 bucket name
 --s3-region <region>            # AWS region
+
+# GCP GCS Configuration  
+--cloud.provider gcp            # Use Google Cloud Storage
+--gcs-bucket <bucket>           # GCS bucket name
+--gcp-project <project>         # GCP project ID
+--gcs-region <region>           # GCS region
 
 # Database-Specific Optional Parameters
 # PostgreSQL
@@ -410,15 +602,21 @@ The system can automatically detect database type:
 --mysql.server-id <id-range>    # Server ID range
 --mysql.table-list <tables>     # Full table names with database prefix
 
-# General Optional
---s3-file-format [avro|json|parquet]
---s3-compression-type [snappy|gzip|lz4]
+# General Optional (works with both S3 and GCS)
+--s3-file-format [avro|json|parquet]     # Also applies to GCS
+--s3-compression-type [snappy|gzip|lz4]  # Also applies to GCS
+--gcs-file-format [avro|json|parquet]    # GCS-specific format (optional)
+--gcs-compression-type [snappy|gzip|lz4] # GCS-specific compression (optional)
 ```
 
 ### Configuration File Examples
 
-**PostgreSQL Configuration** (`application.properties`)
+**AWS S3 + PostgreSQL Configuration** (`application.properties`)
 ```properties
+# Cloud Provider
+cloud.provider=aws
+
+# Database Configuration
 database.type=postgres
 postgres.hostname=localhost
 postgres.port=5432
@@ -428,10 +626,44 @@ postgres.password=cdc_password
 postgres.schema-list=public
 postgres.table-list=public.users,public.orders,public.products
 postgres.slot-name=flink_cdc_slot_production
+
+# AWS S3 Configuration
+s3.bucket=your-s3-bucket
+s3.region=us-east-1
+s3.file-format=avro
+s3.compression-type=snappy
 ```
 
-**MySQL Configuration** (`application.properties`)
+**GCP GCS + PostgreSQL Configuration** (`application.properties`)
 ```properties
+# Cloud Provider
+cloud.provider=gcp
+
+# Database Configuration
+database.type=postgres
+postgres.hostname=localhost
+postgres.port=5432
+postgres.database=cdc_source
+postgres.username=cdc_user
+postgres.password=cdc_password
+postgres.schema-list=public
+postgres.table-list=public.users,public.orders,public.products
+postgres.slot-name=flink_cdc_slot_production
+
+# GCP GCS Configuration
+gcp.project=your-project-id
+gcs.bucket=your-gcs-bucket
+gcs.region=us-central1
+gcs.file-format=avro
+gcs.compression-type=snappy
+```
+
+**AWS S3 + MySQL Configuration** (`application.properties`)
+```properties
+# Cloud Provider
+cloud.provider=aws
+
+# Database Configuration
 database.type=mysql
 mysql.hostname=localhost
 mysql.port=3306
@@ -441,6 +673,36 @@ mysql.password=cdc_password
 mysql.table-list=cdc_source.users,cdc_source.orders,cdc_source.products
 mysql.server-id=5400-5404
 mysql.incremental-snapshot-enabled=true
+
+# AWS S3 Configuration
+s3.bucket=your-s3-bucket
+s3.region=us-east-1
+s3.file-format=avro
+s3.compression-type=snappy
+```
+
+**GCP GCS + MySQL Configuration** (`application.properties`)
+```properties
+# Cloud Provider
+cloud.provider=gcp
+
+# Database Configuration
+database.type=mysql
+mysql.hostname=localhost
+mysql.port=3306
+mysql.database=cdc_source
+mysql.username=cdc_user
+mysql.password=cdc_password
+mysql.table-list=cdc_source.users,cdc_source.orders,cdc_source.products
+mysql.server-id=5400-5404
+mysql.incremental-snapshot-enabled=true
+
+# GCP GCS Configuration
+gcp.project=your-project-id
+gcs.bucket=your-gcs-bucket
+gcs.region=us-central1
+gcs.file-format=avro
+gcs.compression-type=snappy
 ```
 
 ---
@@ -533,11 +795,15 @@ docker exec mysql-cdc mysql -u root -proot_password -e "SHOW MASTER STATUS;"
 grep "Database Type:" log/flink-*-jobmanager-*.log
 ```
 
-**3. S3 Plugin Missing**
+**3. Cloud Storage Plugin Missing**
 ```bash
-# Check plugin
+# Check AWS S3 plugin
 ls -la flink-1.18.0/plugins/flink-s3-fs-hadoop/
 # If missing: cp opt/flink-s3-fs-hadoop-1.18.0.jar plugins/flink-s3-fs-hadoop/
+
+# Check GCP GCS plugin (if using GCS)
+ls -la flink-1.18.0/plugins/flink-gs-fs-hadoop/
+# If missing: cp opt/flink-gs-fs-hadoop-1.18.0.jar plugins/flink-gs-fs-hadoop/
 ```
 
 **4. MySQL-Specific Issues**
@@ -554,11 +820,15 @@ ls -la flink-1.18.0/plugins/flink-s3-fs-hadoop/
 | Error | Database | Solution |
 |-------|----------|----------|
 | `ClassNotFoundException: S3AFileSystem` | Both | Enable S3 plugin |
-| `Unable to load AWS credentials` | Both | Configure AWS profile |
+| `ClassNotFoundException: GoogleHadoopFileSystem` | Both | Enable GCS plugin |
+| `Unable to load AWS credentials` | Both | Configure AWS profile or ADC |
+| `Unable to load GCP credentials` | Both | Run `gcloud auth application-default login` |
+| `Invalid cloud provider: xyz` | Both | Use: aws or gcp |
 | `Invalid database type: xyz` | Both | Use: postgres or mysql |
 | `No replication slot` | PostgreSQL | Create replication slot |
 | `Binlog position not found` | MySQL | Check binlog retention |
 | `Server ID conflict` | MySQL | Use unique server-id range |
+| `GCS bucket not found` | Both | Create GCS bucket or check permissions |
 
 ---
 
@@ -577,11 +847,12 @@ ls -la flink-1.18.0/plugins/flink-s3-fs-hadoop/
 - [ ] Binlog retention configured
 
 ### Deployment (Both Databases)
-- [ ] AWS credentials configured
-- [ ] S3 bucket accessible
+- [ ] Cloud credentials configured (AWS or GCP)
+- [ ] Cloud storage bucket accessible (S3 or GCS)
+- [ ] Cloud storage plugins enabled in Flink
 - [ ] Flink cluster running
 - [ ] Monitoring enabled
-- [ ] Database type explicitly specified
+- [ ] Database type and cloud provider explicitly specified
 
 ---
 
@@ -630,12 +901,16 @@ Both databases provide excellent CDC performance with sub-second latency for rea
 
 ## 🎯 What's New in v1.4.1
 
+- **☁️ Multi-Cloud Support**: Choose between AWS S3 or Google Cloud Storage (GCS) as target
+- **💾 Checkpoint & Savepoint Management**: Automatic cloud storage integration for fault tolerance
 - **✅ Local Testing Verified**: Successfully tested MySQL CDC with real-time I/U/D operations
 - **🔧 Enhanced Configuration**: Environment-specific config files with priority system
 - **🌍 Environment Variables**: `${VAR_NAME}` syntax for dynamic configuration
 - **⚡ Simplified Commands**: Reduced CLI complexity with auto-loading configs
 - **📊 CRUD Verification**: Complete INSERT/UPDATE/DELETE operation testing with GTID tracking
 - **🎯 Sub-second Latency**: Real-time CDC event capture and processing verified
+- **🔗 Cloud Provider Parameter**: Use `--cloud.provider aws|gcp` to select target platform
+- **🚨 Production Recovery**: Comprehensive savepoint operations and recovery procedures
 
 ## 🎯 Previous Updates (v1.4.0)
 
@@ -658,5 +933,5 @@ Both databases provide excellent CDC performance with sub-second latency for rea
 
 ---
 
-**Ready to stream your database changes to S3?** 
-🚀 Start with local testing, then deploy to production with confidence! 
+**Ready to stream your database changes to the cloud?** 
+🚀 Start with local testing, then deploy to AWS S3 or Google Cloud Storage with confidence! 
