@@ -272,6 +272,26 @@ MYSQL-users> [users] LOCAL_SIMULATED: {"before":null,"after":{"id":1,"name":"MyS
 - ✅ **Latency**: Sub-second event capture and processing
 - ✅ **GTID Tracking**: MySQL transaction consistency verified
 
+### 📊 Flink Web UI Monitoring
+
+**Monitor Running Jobs**: Access Flink Web UI at `http://localhost:8081`
+
+![Flink Dashboard - Running CDC Jobs](https://github.com/user-attachments/assets/flink-dashboard-cdc-jobs.png)
+
+**Expected Results:**
+- ✅ **MYSQL-CDC-to-S3**: MySQL CDC job processing database changes
+- ✅ **POSTGRES-CDC-to-S3**: PostgreSQL CDC job processing database changes  
+- ✅ **Status**: Both jobs showing RUNNING status with active tasks
+- ✅ **Duration**: Jobs maintain stable execution over time
+- ✅ **Tasks**: Each job running with 1 task (configurable parallelism)
+
+**Monitoring Features Available:**
+- **Job Overview**: Real-time job status and execution metrics
+- **Task Managers**: Resource utilization and task distribution
+- **Checkpoints**: Checkpoint success rates and state management
+- **Logs**: Detailed job execution and error logs
+- **Metrics**: Throughput, latency, and backpressure monitoring
+
 ---
 
 ## 🔧 Production Setup
@@ -810,6 +830,18 @@ ls -la flink-1.18.0/plugins/flink-gs-fs-hadoop/
 # If missing: cp opt/flink-gs-fs-hadoop-1.18.0.jar plugins/flink-gs-fs-hadoop/
 ```
 
+**4. Jobs Not Visible in Flink Web UI**
+```bash
+# Check Flink cluster status
+./bin/flink list
+
+# Access Web UI
+open http://localhost:8081
+
+# Verify job submission was successful
+tail -f log/flink-*-jobmanager-*.log
+```
+
 **4. MySQL-Specific Issues**
 - ✅ Check binlog format: `SHOW VARIABLES LIKE 'binlog_format';` should be `ROW`
 - ✅ Check GTID mode: `SHOW VARIABLES LIKE 'gtid_mode';` should be `ON`
@@ -915,6 +947,7 @@ Both databases provide excellent CDC performance with sub-second latency for rea
 - **🎯 Sub-second Latency**: Real-time CDC event capture and processing verified
 - **🔗 Cloud Provider Parameter**: Use `--cloud.provider aws|gcp` to select target platform
 - **🚨 Production Recovery**: Comprehensive savepoint operations and recovery procedures
+- **📊 Flink Web UI**: Visual monitoring dashboard showing running CDC jobs and metrics
 
 ## 🎯 Previous Updates (v1.4.0)
 
