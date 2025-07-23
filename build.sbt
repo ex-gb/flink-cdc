@@ -1,9 +1,10 @@
 ThisBuild / version := "1.2.0"
 ThisBuild / scalaVersion := "2.12.17"
 
-// Version definitions - Updated for latest CDC: CDC 3.4.0 + Flink 1.18.0  
+// Version definitions - Using stable Flink CDC versions
 lazy val flinkVersion = "1.18.0"
-lazy val cdcVersion = "3.4.0"
+lazy val postgresCdcVersion = "2.4.2"
+lazy val mysqlCdcVersion = "2.4.2"
 
 // Project configuration
 lazy val root = (project in file("."))
@@ -17,8 +18,9 @@ lazy val root = (project in file("."))
       "org.apache.flink" % "flink-clients" % flinkVersion % "provided",
       "org.apache.flink" % "flink-runtime" % flinkVersion % "provided",
       
-      // CDC Dependencies - Updated for CDC 3.4.0 + Flink 1.18.0
-      "org.apache.flink" % "flink-connector-postgres-cdc" % cdcVersion,
+      // Ververica CDC Dependencies - More stable and compatible
+      "com.ververica" % "flink-connector-postgres-cdc" % postgresCdcVersion,
+      "com.ververica" % "flink-connector-mysql-cdc" % mysqlCdcVersion,
       "org.apache.flink" % "flink-avro" % flinkVersion % "provided",
       "org.apache.flink" % "flink-connector-files" % flinkVersion % "provided",
       
@@ -29,8 +31,9 @@ lazy val root = (project in file("."))
       "com.fasterxml.jackson.core" % "jackson-databind" % "2.15.2",
       "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.15.2",
       
-      // Database connector
+      // Database connectors
       "org.postgresql" % "postgresql" % "42.7.1",
+      "mysql" % "mysql-connector-java" % "8.0.33",
       
       // Logging
       "ch.qos.logback" % "logback-classic" % "1.4.14"

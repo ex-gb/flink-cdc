@@ -1,0 +1,32 @@
+[mysqld]
+# Required for CDC
+server-id = 1
+log-bin = mysql-bin
+binlog-format = ROW
+binlog-row-image = FULL
+
+# GTID configuration
+gtid-mode = ON
+enforce-gtid-consistency = ON
+
+# Binary log retention (7 days)
+expire-logs-days = 7
+
+# Performance and connection settings
+max-connections = 200
+innodb-buffer-pool-size = 256M
+
+# Character set
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+
+# SQL mode
+sql-mode = STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO
+
+# Timeout settings for CDC
+interactive-timeout = 28800
+wait-timeout = 28800
+
+# Binary log settings for CDC
+max-binlog-size = 100M
+sync-binlog = 1 
