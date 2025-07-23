@@ -234,9 +234,17 @@ tail -f log/flink-*-taskexecutor-*.out
   --hostname localhost --port 3306 --database cdc_source \
   --username cdc_user --password cdc_password
 
-# Test with data
+# Test with data (INSERT, UPDATE, DELETE operations)
 docker exec mysql-cdc mysql -u cdc_user -pcdc_password cdc_source -e \
   "INSERT INTO users (name, email) VALUES ('MySQL Test User', 'mysql@example.com');"
+
+# Test UPDATE operation
+docker exec mysql-cdc mysql -u cdc_user -pcdc_password cdc_source -e \
+  "UPDATE users SET age = 30 WHERE name = 'MySQL Test User';"
+
+# Test DELETE operation  
+docker exec mysql-cdc mysql -u cdc_user -pcdc_password cdc_source -e \
+  "DELETE FROM users WHERE name = 'MySQL Test User';"
 
 # Watch logs for: 🧪 [users] LOCAL MODE: Would write to S3 (simulated)
 tail -f log/flink-*-taskexecutor-*.out
@@ -247,6 +255,13 @@ tail -f log/flink-*-taskexecutor-*.out
 LOCAL-users> [users] LOCAL_SIMULATED: {"before":null,"after":{"id":1,"name":"Test User"...
 MYSQL-users> [users] LOCAL_SIMULATED: {"before":null,"after":{"id":1,"name":"MySQL Test User"...
 ```
+
+**🎯 Real-time CDC Verification**: Successfully tested complete CRUD operations:
+- ✅ **INSERT**: `"op":"c"` - New record creation captured
+- ✅ **UPDATE**: `"op":"u"` - Field changes with before/after values
+- ✅ **DELETE**: `"op":"d"` - Record deletion with final state
+- ✅ **Latency**: Sub-second event capture and processing
+- ✅ **GTID Tracking**: MySQL transaction consistency verified
 
 ---
 
@@ -355,6 +370,21 @@ The system can automatically detect database type:
 ---
 
 ## ⚙️ Configuration Reference
+
+### Enhanced Configuration System (v1.4.1)
+
+**Environment-Specific Configuration Files**: 
+- `dev.properties`, `staging.properties`, `production.properties`
+- **Automatic Loading**: Based on `--env` parameter
+- **Environment Variables**: `${VAR_NAME}` syntax supported
+- **Priority System**: CLI args → env config → defaults → env vars → system props
+
+**Configuration Loading Priority**:
+1. Command line arguments (highest priority)
+2. Environment-specific config file (e.g., `dev.properties`)
+3. Default `application.properties`
+4. Environment variables (`${HOSTNAME}`, `${PASSWORD}`, etc.)
+5. System properties (lowest priority)
 
 ### Command Line Parameters
 ```bash
@@ -598,7 +628,16 @@ Both databases provide excellent CDC performance with sub-second latency for rea
 
 ---
 
-## 🎯 What's New in v1.4.0
+## 🎯 What's New in v1.4.1
+
+- **✅ Local Testing Verified**: Successfully tested MySQL CDC with real-time I/U/D operations
+- **🔧 Enhanced Configuration**: Environment-specific config files with priority system
+- **🌍 Environment Variables**: `${VAR_NAME}` syntax for dynamic configuration
+- **⚡ Simplified Commands**: Reduced CLI complexity with auto-loading configs
+- **📊 CRUD Verification**: Complete INSERT/UPDATE/DELETE operation testing with GTID tracking
+- **🎯 Sub-second Latency**: Real-time CDC event capture and processing verified
+
+## 🎯 Previous Updates (v1.4.0)
 
 - **🔧 Ververica CDC 2.4.2**: Upgraded to stable, unified CDC connectors
 - **📁 Organized Structure**: Database configuration files moved to `database/` folder
